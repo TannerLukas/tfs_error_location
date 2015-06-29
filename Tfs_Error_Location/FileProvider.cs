@@ -41,14 +41,6 @@ namespace Tfs_Error_Location
                     MemoryStream memStream = new MemoryStream();
                     memStream.SetLength(fileStream.Length);
                     fileStream.Read(memStream.GetBuffer(), 0, (int)fileStream.Length);
-
-                    memStream.Position = 0;
-
-                    StreamReader reader = new StreamReader(memStream);
-                    string text = reader.ReadToEnd();
-
-                    Console.WriteLine(text);
-
                     return memStream;
                 }
             }
