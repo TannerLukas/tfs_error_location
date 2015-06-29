@@ -1,7 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tfs_Error_Location", "Tfs_Error_Location/Tfs_Error_Location.csproj", "{28B891B4-CB16-4C15-9C70-189FD866994B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tfs_Error_Location", "Tfs_Error_Location\Tfs_Error_Location.csproj", "{28B891B4-CB16-4C15-9C70-189FD866994B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gui_Demo", "Gui_Demo\Gui_Demo.csproj", "{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,6 +15,10 @@ Global
 		{28B891B4-CB16-4C15-9C70-189FD866994B}.Debug|x86.Build.0 = Debug|x86
 		{28B891B4-CB16-4C15-9C70-189FD866994B}.Release|x86.ActiveCfg = Release|x86
 		{28B891B4-CB16-4C15-9C70-189FD866994B}.Release|x86.Build.0 = Release|x86
+		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Debug|x86.ActiveCfg = Debug|x86
+		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Debug|x86.Build.0 = Debug|x86
+		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Release|x86.ActiveCfg = Release|x86
+		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

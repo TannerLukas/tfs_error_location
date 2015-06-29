@@ -1,16 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using ICSharpCode.NRefactory.CSharp;
+using ICSharpCode.NRefactory.TypeSystem;
 using Mono.CSharp;
+using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
 using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
-using Statement = ICSharpCode.NRefactory.CSharp.Statement;
 
 namespace Tfs_Error_Location
 {
-    internal class AstComparer
+    public class AstComparer
     {
         /// <summary>
         /// An Enum which defines all possible options of the status of method.
@@ -23,10 +25,48 @@ namespace Tfs_Error_Location
             Deleted
         }
 
-        public static Dictionary<MethodStatus, List<MethodDeclaration>> CompareSyntaxTrees(
-            SyntaxTree oldTree,
-            SyntaxTree newTree)
+        /// <summary>
+        /// A flag which indicates if changes to comments should also be taken into account
+        /// when changes of a method are calculated. If it is true, all comments are ignored.
+        /// </summary>
+        private const bool s_IgnoreComments = true;
+
+        private const string s_CommentString = "Comment";
+
+        /// <summary>
+        /// Compares two syntax trees:
+        /// 1) get all methodDeclarations of the trees
+        /// 2) creates a methodMapping in order to know which methods should be compared
+        /// 3) compares the methods where a matching method was found
+        /// 4) if no match was found then the method was either added or deleted
+        /// </summary>
+        /// <param name="oldFileContent">the content of the old file</param>
+        /// <param name="oldFileName"></param>
+        /// <param name="newFileContent">the content of the new file</param>
+        /// <param name="newFileName"></param>
+        /// <param name="errorLogStream"></param>
+        /// <returns>on success: a dictionary containing the possible states of methods as keys,
+        /// and a list of their corresponding methods as values, null otherwise</returns>
+        internal static Dictionary<MethodStatus, List<MethodDeclaration>> CompareSyntaxTrees(
+            string oldFileContent,
+            string oldFileName,
+            string newFileContent,
+            string newFileName,
+            out MemoryStream errorLogStream)
         {
+            //retrieve the syntaxTrees for the old and the new file
+            SyntaxTree oldTree = GetSyntaxTree(oldFileContent, oldFileName);
+            SyntaxTree newTree = GetSyntaxTree(newFileContent, newFileName);
+
+            errorLogStream = new MemoryStream();
+            StreamWriter errorLogWriter = new StreamWriter(errorLogStream);
+
+            if (CheckSyntaxTreeErrors(oldTree, errorLogWriter) == false ||
+                CheckSyntaxTreeErrors(newTree, errorLogWriter) == false)
+            {
+                return null;
+            }
+
             //get all methods for both files
             IEnumerable<MethodDeclaration> oldMethods = GetAllMethodDeclarations(oldTree);
             IEnumerable<MethodDeclaration> newMethods = GetAllMethodDeclarations(newTree);
@@ -40,215 +80,79 @@ namespace Tfs_Error_Location
             Dictionary<MethodDeclaration, MethodDeclaration> methodMapping = CreateMethodMapping
                 (oldMethods, newMethods, out addedMethods, out deletedMethods);
 
-            Dictionary<MethodStatus, List<MethodDeclaration>> result = CreateMethodComparisonResult
-                (methodMapping, addedMethods, deletedMethods);
-
-            return result;
-        }
-
-        private static Dictionary<MethodStatus, List<MethodDeclaration>> CreateMethodComparisonResult(
-            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping,
-            List<MethodDeclaration> addedMethods,
-            List<MethodDeclaration> deletedMethods)
-        {
             Dictionary<MethodStatus, List<MethodDeclaration>> result = CompareMatchedMethods
                 (methodMapping);
 
-            //add the added and deleted Method with their corresponding status to the result
+            //add the added and deleted Method with their corresponding status to result
             result[MethodStatus.Added] = addedMethods;
             result[MethodStatus.Deleted] = deletedMethods;
 
             return result;
         }
 
-        private static Dictionary<MethodStatus, List<MethodDeclaration>> CompareMatchedMethods(
-            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping)
+        /// <summary>
+        /// checks if any syntax errors occurred in the syntaxTree.
+        /// prints the errors to the errorLogStream.
+        /// </summary>
+        /// <param name="tree">the underlying syntaxtree to check</param>
+        /// <param name="errorLogWriter">StreamWriter used for all errors</param>
+        /// <returns>true if no errors occurred, false otherwise</returns>
+        private static bool CheckSyntaxTreeErrors(
+            SyntaxTree tree,
+            StreamWriter errorLogWriter)
         {
-            //init result: create an entry for each possible MethodStatus
-            Dictionary<MethodStatus, List<MethodDeclaration>> result =
-                new Dictionary<MethodStatus, List<MethodDeclaration>>
-                {
-                    {MethodStatus.NotChanged, new List<MethodDeclaration>()},
-                    {MethodStatus.Changed, new List<MethodDeclaration>()},
-                    {MethodStatus.Added, new List<MethodDeclaration>()},
-                    {MethodStatus.Deleted, new List<MethodDeclaration>()}
-                };
+            List<Error> errors = tree.Errors;
 
-            foreach (KeyValuePair<MethodDeclaration, MethodDeclaration> pair in methodMapping)
+            if (errors.Count == 0)
             {
-                MethodDeclaration oldMethod = pair.Key;
-                MethodDeclaration newMethod = pair.Value;
-
-                //1. Compare Modifiers
-                //2. Compare ReturnValueType
-                //(3. Compare Name)
-                //4. Compare Parameters
-                //5. Compare MethodBody
-
-                bool hasNoChanges = CompareMethodModifiers(oldMethod, newMethod) &&
-                                    CompareReturnValueType(oldMethod, newMethod) &&
-                                    CompareParameters(oldMethod, newMethod) &&
-                                    CompareMethodBody(oldMethod, newMethod);
-
-                if (hasNoChanges)
-                {
-                    result[MethodStatus.NotChanged].Add(newMethod);
-                }
-                else
-                {
-                    result[MethodStatus.Changed].Add(newMethod);
-                }
+                return true;
             }
-
-            return result;
-        }
-
-        private static bool CompareMethodBody(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
-        {
-            bool result = true;
-
-            BlockStatement oldBody = oldMethod.Body;
-            AstNodeCollection<Statement> oldStatements = oldBody.Statements;
-
-            BlockStatement newBody = newMethod.Body;
-            AstNodeCollection<Statement> newStatements = newBody.Statements;
-
-            foreach (Statement oldStatement in oldStatements)
+            else
             {
-                //TraverseStatements(oldStatement.Children);
-                result = result && TraverseStatements(oldStatements, newStatements);
-
-                if (!result)
+                foreach (Error error in errors)
                 {
-                    return result;
+                    errorLogWriter.WriteLine
+                        ("Error occured in File {0} : {1}", tree.FileName, error.Message);
                 }
-            }
-
-            return result;
-        }
-
-        private static bool TraverseStatements(
-            IEnumerable<AstNode> oldChildren,
-            IEnumerable<AstNode> newChildren)
-        {
-            int counter = 0;
-            bool result = true;
-            foreach (AstNode oldChild in oldChildren)
-            {
-                if (counter >= newChildren.Count())
-                {
-                    return false;
-                }
-
-                AstNode newChild = newChildren.ElementAt(counter);
-
-                if (oldChild.HasChildren)
-                {
-                    if (!newChild.HasChildren)
-                    {
-                        return false;
-                    }
-
-                    result = result && TraverseStatements(oldChild.Children, newChild.Children);
-                }
-                else
-                {
-                    string old = oldChild.GetText();
-                    string newText = newChild.GetText();
-
-                    return (old.Equals(newText));
-                }
-
-                counter++;
-            }
-
-            return result;
-        }
-
-        private static bool CompareParameters(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
-        {
-            AstNodeCollection<ParameterDeclaration> oldParameters = oldMethod.Parameters;
-            AstNodeCollection<ParameterDeclaration> newParameters = newMethod.Parameters;
-
-            if (oldParameters.Count != newParameters.Count)
-            {
+                errorLogWriter.Flush();
                 return false;
             }
-
-            int counter = 0;
-            foreach (ParameterDeclaration parameter in oldParameters)
-            {
-                string oldParameterName;
-                ParameterModifier oldParameterModifier;
-                string oldParameterType;
-
-                GetParameterMember
-                    (parameter, out oldParameterName, out oldParameterType, out oldParameterModifier);
-
-                ParameterDeclaration newParameter = newParameters.ElementAt(counter);
-                string newParameterName;
-                ParameterModifier newParameterModifier;
-                string newParameterType;
-
-                GetParameterMember
-                    (newParameter, out newParameterName, out newParameterType,
-                        out newParameterModifier);
-
-                bool result = (oldParameterName.Equals(newParameterName)) &&
-                              (oldParameterModifier == newParameterModifier) &&
-                              (oldParameterType.Equals(newParameterType));
-
-                if (!result)
-                {
-                    return false;
-                }
-
-                counter++;
-            }
-
-            return true;
         }
 
-        private static void GetParameterMember(
-            ParameterDeclaration parameter,
-            out string parameterName,
-            out string parameterType,
-            out ParameterModifier parameterModifier)
+        /// <summary>
+        /// creates a new syntaxTree for the given code
+        /// </summary>
+        /// <param name="code">the code which should be parsed</param>
+        /// <param name="fileName">the fileName of the codeContents</param>
+        /// <returns>a new syntaxtree based on the contents of the code parameter</returns>
+        private static SyntaxTree GetSyntaxTree(
+            string code,
+            string fileName)
         {
-            parameterName = parameter.Name;
-            parameterModifier = parameter.ParameterModifier;
-            parameterType = parameter.Type.ToString();
+            SyntaxTree tree = new CSharpParser().Parse(code, fileName);
+            return tree;
         }
 
-        private static bool CompareReturnValueType(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
+        /// <summary>
+        /// retrieves all methodDeclarations from the given SyntaxTree
+        /// </summary>
+        /// <param name="tree">the tree from which the methods should be retrieved</param>
+        /// <returns>a list of all methodDeclarations in a SyntaxTree</returns>
+        private static IEnumerable<MethodDeclaration> GetAllMethodDeclarations(SyntaxTree tree)
         {
-            AstType oldReturnType = oldMethod.ReturnType;
-            AstType newReturnType = newMethod.ReturnType;
-
-            //var a = oldReturnType.NodeType;
-
-            string oldType = oldReturnType.ToString();
-            string newType = newReturnType.ToString();
-
-            return (oldType.Equals(newType));
+            IEnumerable<MethodDeclaration> methods = tree.Descendants.OfType<MethodDeclaration>();
+            return methods;
         }
 
-        private static bool CompareMethodModifiers(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
-        {
-            Modifiers oldModifiers = oldMethod.Modifiers;
-            Modifiers newModifiers = newMethod.Modifiers;
-
-            return (oldModifiers == newModifiers);
-        }
-
+        /// <summary>
+        /// Create a methodMapping by comparing the names of methods.
+        /// The methods were no mapping was found are either added or deleted.
+        /// </summary>
+        /// <param name="oldMethods">a list of methods in the oldFile</param>
+        /// <param name="newMethods">a list of methods in the newFile</param>
+        /// <param name="addedMethods">contains the methods which were added</param>
+        /// <param name="deletedMethods">contains the methods which were deleted</param>
+        /// <returns>a dictionary of matching methods</returns>
         private static Dictionary<MethodDeclaration, MethodDeclaration> CreateMethodMapping(
             IEnumerable<MethodDeclaration> oldMethods,
             IEnumerable<MethodDeclaration> newMethods,
@@ -285,30 +189,13 @@ namespace Tfs_Error_Location
             return methodMapping;
         }
 
-        private static List<MethodDeclaration> FindAllNewMethodDeclarations(
-            IEnumerable<MethodDeclaration> mappedMethods,
-            IEnumerable<MethodDeclaration> newMethods)
-        {
-            List<MethodDeclaration> addedMethods = new List<MethodDeclaration>();
-
-            foreach (MethodDeclaration newMethod in newMethods)
-            {
-                //a not existing mapping indicates that the method was added 
-                if (!mappedMethods.Contains(newMethod))
-                {
-                    addedMethods.Add(newMethod);
-                }
-            }
-
-            return addedMethods;
-        }
-
-        private static IEnumerable<MethodDeclaration> GetAllMethodDeclarations(SyntaxTree tree)
-        {
-            IEnumerable<MethodDeclaration> methods = tree.Descendants.OfType<MethodDeclaration>();
-            return methods;
-        }
-
+        /// <summary>
+        /// try to find a methodDeclaration in the newMethodDeclarations.
+        /// the comparison is only done by comparing the names.
+        /// </summary>
+        /// <param name="oldMethod">the method to which a matching method should be found</param>
+        /// <param name="newMethods">the list of all MethodDeclarations of the new file</param>
+        /// <returns>on success: the matchingMethod, null otherwise</returns>
         private static MethodDeclaration FindMatchingMethodDeclaration(
             MethodDeclaration oldMethod,
             IEnumerable<MethodDeclaration> newMethods)
@@ -328,6 +215,399 @@ namespace Tfs_Error_Location
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// checks for which methods no mapping exists, because this indicates that they
+        /// were added
+        /// </summary>
+        /// <param name="mappedMethods">the list of methods where a mapping was already found</param>
+        /// <param name="newMethods">the list of all MethodDeclarations of the new file</param>
+        /// <returns>a list of methods which were added in the new file</returns>
+        private static List<MethodDeclaration> FindAllNewMethodDeclarations(
+            IEnumerable<MethodDeclaration> mappedMethods,
+            IEnumerable<MethodDeclaration> newMethods)
+        {
+            List<MethodDeclaration> addedMethods = new List<MethodDeclaration>();
+
+            foreach (MethodDeclaration newMethod in newMethods)
+            {
+                //a non existing mapping indicates that the method was added 
+                if (!mappedMethods.Contains(newMethod))
+                {
+                    addedMethods.Add(newMethod);
+                }
+            }
+
+            return addedMethods;
+        }
+
+        /// <summary>
+        /// compares the methods to which a mapping was found in the following way:
+        /// 1) compare Modifiers
+        /// 2) compare ReturnValueType
+        /// 3) compare Parameters
+        /// 4) Compare MethodBody
+        /// </summary>
+        /// <param name="methodMapping">a mapping of the matching methods</param>
+        /// <returns>a dictionary containing the methods which were changed and the 
+        /// methods which were not changed.</returns>
+        private static Dictionary<MethodStatus, List<MethodDeclaration>> CompareMatchedMethods(
+            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping)
+        {
+            Dictionary<MethodStatus, List<MethodDeclaration>> result =
+                new Dictionary<MethodStatus, List<MethodDeclaration>>
+                {
+                    {MethodStatus.NotChanged, new List<MethodDeclaration>()},
+                    {MethodStatus.Changed, new List<MethodDeclaration>()}
+                };
+
+            foreach (KeyValuePair<MethodDeclaration, MethodDeclaration> pair in methodMapping)
+            {
+                MethodDeclaration oldMethod = pair.Key;
+                MethodDeclaration newMethod = pair.Value;
+
+                bool hasNoChanges = CompareMethodModifiers(oldMethod, newMethod) &&
+                                    CompareReturnValueType(oldMethod, newMethod) &&
+                                    CompareParameters(oldMethod, newMethod) &&
+                                    CompareMethodBody(oldMethod, newMethod);
+
+                if (hasNoChanges)
+                {
+                    result[MethodStatus.NotChanged].Add(newMethod);
+                }
+                else
+                {
+                    result[MethodStatus.Changed].Add(newMethod);
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// compares the modifiers of two methods. As the Modifier Type is
+        /// an enum they could be compared directly.
+        /// </summary>
+        /// <param name="oldMethod">contains the old MethodDeclaration</param>
+        /// <param name="newMethod">contains the new MethodDeclaration</param>
+        /// <returns>true if the methods have the same modifiers, false otherwise</returns>
+        private static bool CompareMethodModifiers(
+            MethodDeclaration oldMethod,
+            MethodDeclaration newMethod)
+        {
+            Modifiers oldModifiers = oldMethod.Modifiers;
+            Modifiers newModifiers = newMethod.Modifiers;
+
+            return (oldModifiers == newModifiers);
+        }
+
+        /// <summary>
+        /// compares the returnValueType of two methods. As the ReturnValueType is
+        /// an AstType it does not contain any method for comparison. Hence, only
+        /// the text contents are compared.
+        /// </summary>
+        /// <param name="oldMethod">contains the old MethodDeclaration</param>
+        /// <param name="newMethod">contains the new MethodDeclaration</param>
+        /// <returns>true if the methods have the same returnValueType, false otherwise</returns>
+        private static bool CompareReturnValueType(
+            MethodDeclaration oldMethod,
+            MethodDeclaration newMethod)
+        {
+            AstType oldReturnType = oldMethod.ReturnType;
+            AstType newReturnType = newMethod.ReturnType;
+
+            string oldType = oldReturnType.ToString();
+            string newType = newReturnType.ToString();
+
+            return (oldType.Equals(newType));
+        }
+
+        /// <summary>
+        /// compares the parameters of two methods
+        /// </summary>
+        /// <param name="oldMethod">contains the old MethodDeclaration</param>
+        /// <param name="newMethod">contains the new MethodDeclaration</param>
+        /// <returns>true if the methods have the same parameters, false otherwise</returns>
+        private static bool CompareParameters(
+            MethodDeclaration oldMethod,
+            MethodDeclaration newMethod)
+        {
+            AstNodeCollection<ParameterDeclaration> oldParameters = oldMethod.Parameters;
+            AstNodeCollection<ParameterDeclaration> newParameters = newMethod.Parameters;
+
+            if (oldParameters.Count != newParameters.Count)
+            {
+                return false;
+            }
+
+            int counter = 0;
+            foreach (ParameterDeclaration parameter in oldParameters)
+            {
+                //A Parameter consists of a name, type and a modifier
+
+                //retrieve the corresponding attributes from the oldParameter
+                string oldParameterName;
+                ParameterModifier oldParameterModifier;
+                string oldParameterType;
+
+                GetParameterAttributes
+                    (parameter, out oldParameterName, out oldParameterType, out oldParameterModifier);
+
+
+                //retrieve the corresponding attributes from the newParameter
+                ParameterDeclaration newParameter = newParameters.ElementAt(counter);
+                string newParameterName;
+                ParameterModifier newParameterModifier;
+                string newParameterType;
+
+                GetParameterAttributes
+                    (newParameter, out newParameterName, out newParameterType,
+                        out newParameterModifier);
+
+                //compare their attributes
+                bool result = (oldParameterName.Equals(newParameterName)) &&
+                              (oldParameterModifier == newParameterModifier) &&
+                              (oldParameterType.Equals(newParameterType));
+
+                if (!result)
+                {
+                    return false;
+                }
+
+                counter++;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// retrieves several attributes from a parameter
+        /// </summary>
+        /// <param name="parameter">the parameter from which the attributes 
+        /// should be returned</param>
+        /// <param name="parameterName">contains the name of the parameter</param>
+        /// <param name="parameterType">contains the type of the parameter as a string</param>
+        /// <param name="parameterModifier">contains the name of the parameter</param>
+        private static void GetParameterAttributes(
+            ParameterDeclaration parameter,
+            out string parameterName,
+            out string parameterType,
+            out ParameterModifier parameterModifier)
+        {
+            parameterName = parameter.Name;
+            parameterModifier = parameter.ParameterModifier;
+            parameterType = parameter.Type.ToString();
+        }
+
+        /// <summary>
+        /// 1) retrieves all childnodes from the methodbodies
+        /// 2) traverses through their children and compares them
+        /// </summary>
+        /// <param name="oldMethod">contains the old MethodDeclaration</param>
+        /// <param name="newMethod">contains the new MethodDeclaration</param>
+        /// <returns>true if the methods have the same body, false otherwise</returns>
+        private static bool CompareMethodBody(
+            MethodDeclaration oldMethod,
+            MethodDeclaration newMethod)
+        {
+            bool result = true;
+
+            BlockStatement oldBody = oldMethod.Body;
+            IEnumerable<AstNode> oldChilds = oldBody.Children;
+
+            BlockStatement newBody = newMethod.Body;
+            IEnumerable<AstNode> newChilds = newBody.Children;
+
+            //Comments are ignored if s_IgnoreComments == true
+            //otherwise, comment changes indicate that the method has changed.
+            if (s_IgnoreComments)
+            {
+                result = TraverseMethodBodyIgnoringComments(oldChilds, newChilds);
+            }
+            else
+            {
+                result = TraverseMethodBody(oldChilds, newChilds);
+            }
+
+
+            return result;
+        }
+
+        /// <summary>
+        /// Compares all oldChildNodes with all newChildNodes.
+        /// if a child has also any children then this method will again 
+        /// be called with the childs.Children (recursion). All comments 
+        /// are ignored.
+        /// </summary>
+        /// <param name="oldChildren">contains the old childNodes</param>
+        /// <param name="newChildren">contains the new childNodes</param>
+        /// <returns>true if all old childNodes are equal to all new childNodes, 
+        /// false otherwise</returns>
+        private static bool TraverseMethodBodyIgnoringComments(
+            IEnumerable<AstNode> oldChildren,
+            IEnumerable<AstNode> newChildren)
+        {
+            int counter = 0;
+            bool result = true;
+            foreach (AstNode oldChild in oldChildren)
+            {
+                if (counter >= newChildren.Count())
+                {
+                    return false;
+                }
+
+                //the role of a node indicates if it is a comment or not
+                //skip all comments
+                if (oldChild.Role.ToString().Equals(s_CommentString))
+                {
+                    continue;
+                }
+
+                AstNode newChild = newChildren.ElementAt(counter);
+
+                //skip all comments
+                while (newChild.Role.ToString().Equals(s_CommentString))
+                {
+                    counter ++;
+                    newChild = newChildren.ElementAt(counter);
+                }
+
+                //if the children also has children then the same method 
+                //is called for the child.children
+                //otherwise the text of the current old and new node is compared
+                if (oldChild.HasChildren)
+                {
+                    if (!newChild.HasChildren)
+                    {
+                        return false;
+                    }
+
+                    result = result &&
+                             TraverseMethodBodyIgnoringComments
+                                 (oldChild.Children, newChild.Children);
+                }
+                else
+                {
+                    string old = oldChild.GetText();
+                    string newText = newChild.GetText();
+                    if (!old.Equals(newText))
+                    {
+                        return false;
+                    }
+                }
+
+                counter++;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Compares all oldChildNodes with all newChildNodes.
+        /// if a child has also any children then this method will again 
+        /// be called with the childs.Children (recursion)
+        /// </summary>
+        /// <param name="oldChildren">contains the old childNodes</param>
+        /// <param name="newChildren">contains the new childNodes</param>
+        /// <returns>true if all old childNodes are equal to all new childNodes, 
+        /// false otherwise</returns>
+        private static bool TraverseMethodBody(
+            IEnumerable<AstNode> oldChildren,
+            IEnumerable<AstNode> newChildren)
+        {
+            int counter = 0;
+            bool result = true;
+            foreach (AstNode oldChild in oldChildren)
+            {
+                if (counter >= newChildren.Count())
+                {
+                    return false;
+                }
+
+                AstNode newChild = newChildren.ElementAt(counter);
+
+                //if the children also has children then the same method 
+                //is called for the child.children
+                //otherwise the text of the current old and new node is compared
+                if (oldChild.HasChildren)
+                {
+                    if (!newChild.HasChildren)
+                    {
+                        return false;
+                    }
+
+                    result = result && TraverseMethodBody(oldChild.Children, newChild.Children);
+                }
+                else
+                {
+                    string old = oldChild.GetText();
+                    string newText = newChild.GetText();
+                    if (!old.Equals(newText))
+                    {
+                        return false;
+                    }
+                }
+
+                counter++;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// creates a method signature string.
+        /// e.g. public static void Main
+        /// </summary>
+        /// <param name="method">the method for which the signature should be created</param>
+        /// <returns>a string of the method signature(modifers, returnValue, name, [parameters])</returns>
+        internal static string GetMethodSignatureString(MethodDeclaration method)
+        {
+            string signature = String.Empty;
+            signature += GetModifiersAsString(method.Modifiers) + method.ReturnType + " " +
+                         method.Name;
+            //    GetParametersAsStrings(method.Parameters);
+
+            return signature;
+        }
+
+        /// <summary>
+        /// creates a string containing the modifiers of a method.
+        /// e.g. "public static"
+        /// </summary>
+        /// <param name="methodModifiers">the modifiers for which the string should be created</param>
+        /// <returns>a string containing</returns>
+        private static string GetModifiersAsString(Modifiers methodModifiers)
+        {
+            string result = String.Empty;
+            if (methodModifiers.ToString().Contains(","))
+            {
+                string[] mods = methodModifiers.ToString().Split(',');
+                foreach (string mod in mods)
+                {
+                    result += mod.Trim().ToLower() + " ";
+                }
+            }
+            else
+            {
+                result = methodModifiers.ToString().ToLower() + " ";
+            }
+
+            return result;
+        }
+
+        private static string GetParametersAsStrings(IEnumerable<ParameterDeclaration> parameters)
+        {
+            string parameterString = "( ";
+
+            foreach (ParameterDeclaration parameter in parameters)
+            {
+                parameterString += parameter.GetText() + " ";
+            }
+
+            parameterString += ")";
+
+            return parameterString;
         }
     }
 }
