@@ -11,6 +11,7 @@
     <VerifyUploadedFiles>false</VerifyUploadedFiles>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
-    <StartArguments>D:\Bachelorarbeit\tfs_error_location\tfs_error_location\Tfs_Error_Location\TestFile1.cs D:\Bachelorarbeit\tfs_error_location\tfs_error_location\Tfs_Error_Location\TestFile2.cs</StartArguments>
+    <StartArguments>
+    </StartArguments>
   </PropertyGroup>
 </Project>
