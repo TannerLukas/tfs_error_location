@@ -17,8 +17,6 @@ namespace Gui_Demo
         private Dictionary<AstComparer.MethodStatus, List<MethodDeclaration>>
             m_MethodComparisonResult;
 
-        private int m_SelectedChars = 0;
-
         public Form1()
         {
             InitializeComponent();
@@ -58,7 +56,7 @@ namespace Gui_Demo
                 foreach (MethodDeclaration method in methodComparisonResult[methodStatus])
                 {
                     //TreeNode node = new TreeNode(AstComparer.GetMethodSignatureString(method));
-                    TreeNode node = new TreeNode(method.Name);
+                    TreeNode node = new TreeNode(AstComparer.GetFullyQualifiedMethodName(method));
                     treeNodes.Add(node);
                 }
                 TreeNode methodStatusNode = new TreeNode
@@ -74,47 +72,69 @@ namespace Gui_Demo
             string newContent = txtNew.Text;
             string oldContent = txtOld.Text;
 
-            DeSelectAllNodes();
+            DeSelectAllTextBoxes();
 
             //in order to avoid that any text changes were also undone
             txtNew.Text = newContent;
             txtOld.Text = oldContent;
 
             TreeNode node = trView.SelectedNode;
+
+            if (node == null)
+            {
+                return;
+            }
             int nodeLevel = node.Level;
 
             AstComparer.MethodStatus methodStatus;
+            RichTextBox searchBox;
             if (nodeLevel == 0)
             {
                 methodStatus = ParseMethodStatus(node.Text);
+                searchBox = GetTextBoxToSearchIn(methodStatus);
+
                 foreach (MethodDeclaration method in m_MethodComparisonResult[methodStatus])
                 {
-                    SelectText(method, methodStatus);
+                    SelectText(method, searchBox);
                 }
+                searchBox.ScrollToCaret();
             }
             else if (nodeLevel == 1)
             {
                 TreeNode parentNode = node.Parent;
                 methodStatus = ParseMethodStatus(parentNode.Text);
 
-                MethodDeclaration method = m_MethodComparisonResult[methodStatus].Find
-                    (s => s.Name.Equals(node.Text));
+                searchBox = GetTextBoxToSearchIn(methodStatus);
 
-                SelectText(method, methodStatus);
+                string[] methodNameAttributes = node.Text.Split('.');
+                string methodName = methodNameAttributes[methodNameAttributes.Count() - 1];
+
+                MethodDeclaration method = m_MethodComparisonResult[methodStatus].Find
+                    (s => s.Name.Equals(methodName));
+
+                SelectText(method, searchBox);
+                searchBox.ScrollToCaret();
             }
         }
 
-        private void DeSelectAllNodes()
+        private RichTextBox GetTextBoxToSearchIn(AstComparer.MethodStatus status)
         {
-            //deselect all previously selected Nodes
-            while (m_SelectedChars > 0)
+            RichTextBox box;
+            if (status == AstComparer.MethodStatus.Deleted)
             {
-                m_SelectedChars--;
-                txtNew.DeselectAll();
-                txtOld.DeselectAll();
-                txtNew.Select(0, 0);
-                txtOld.Select(0, 0);
+                box = txtOld;
             }
+            else
+            {
+                box = txtNew;
+            }
+            return box;
+        }
+
+        private void DeSelectAllTextBoxes()
+        {
+            txtNew.DeselectAll();
+            txtOld.DeselectAll();
         }
 
         private static AstComparer.MethodStatus ParseMethodStatus(string methodStatus)
@@ -125,22 +145,11 @@ namespace Gui_Demo
             return status;
         }
 
-        private void SelectText(
+        private static void SelectText(
             MethodDeclaration method,
-            AstComparer.MethodStatus methodStatus)
+            RichTextBox searchBox)
         {
             string text = AstComparer.GetMethodSignatureString(method);
-
-            RichTextBox searchBox;
-
-            if (methodStatus == AstComparer.MethodStatus.Deleted)
-            {
-                searchBox = txtOld;
-            }
-            else
-            {
-                searchBox = txtNew;
-            }
 
             int startIndex = FindMyText(searchBox, text, 0, searchBox.Text.Length);
 
@@ -150,10 +159,8 @@ namespace Gui_Demo
                 // Find the end index. End Index = number of characters in textbox
                 int selectionLength = text.Length;
                 // Highlight the search string
-                txtOld.SelectionBackColor = Color.Yellow;
-                txtNew.SelectionBackColor = Color.Yellow;
+                searchBox.SelectionBackColor = Color.Yellow;
                 searchBox.Select(startIndex, selectionLength);
-                m_SelectedChars += selectionLength;
             }
         }
 

@@ -54,8 +54,8 @@ namespace Tfs_Error_Location
         /// <param name="oldFile">contains the contents of the oldFile</param>
         /// <param name="newFile">contains the contents of the newFile</param>
         internal static void CreateExampleFiles(
-            out Stream oldFile,
-            out Stream newFile)
+            out string oldFile,
+            out string newFile)
         {
             oldFile = GetOldExampleFileContent();
             newFile = GetNewExampleFileContent();
@@ -64,8 +64,8 @@ namespace Tfs_Error_Location
         /// <summary>
         /// Creates example file contents of the "newFile"
         /// </summary>
-        /// <returns>a stream containing the contents of the exampleFile</returns>
-        private static Stream GetNewExampleFileContent()
+        /// <returns>a string containing the contents of the exampleFile</returns>
+        private static string GetNewExampleFileContent()
         {
             string newFile = @"using System;
                 using System.Collections.Generic;
@@ -74,7 +74,7 @@ namespace Tfs_Error_Location
 
                 namespace Tfs_Error_Location
                 {
-                    class TestFile2
+                    class TestFile1
                     {
                         public void Main(string[] args)
                         {
@@ -109,19 +109,14 @@ namespace Tfs_Error_Location
                     }
                 }";
 
-            MemoryStream stream = new MemoryStream();
-            StreamWriter newWriter = new StreamWriter(stream){AutoFlush = true};
-            
-            newWriter.Write(newFile);
-
-            return stream;
+            return newFile;
         }
 
         /// <summary>
         /// Creates example file contents of the "oldFile"
         /// </summary>
-        /// <returns>a stream containing the contents of the exampleFile</returns>
-        private static Stream GetOldExampleFileContent()
+        /// <returns>a string containing the contents of the exampleFile</returns>
+        private static string GetOldExampleFileContent()
         {
             string oldFile = @"
                 using System;
@@ -170,11 +165,7 @@ namespace Tfs_Error_Location
                     }
                 }";
 
-            MemoryStream stream = new MemoryStream();
-            StreamWriter oldWriter = new StreamWriter(stream){AutoFlush = true};
-            oldWriter.Write(oldFile);
-
-            return stream;
+            return oldFile;
         }
     }
 }

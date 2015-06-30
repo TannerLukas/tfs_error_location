@@ -87,7 +87,6 @@ namespace Gui_Demo
             this.txtOld.Size = new System.Drawing.Size(476, 389);
             this.txtOld.TabIndex = 4;
             this.txtOld.Text = resources.GetString("txtOld.Text");
-            this.txtOld.SelectionBackColor = Color.Yellow;
             // 
             // txtNew
             // 
@@ -96,7 +95,6 @@ namespace Gui_Demo
             this.txtNew.Size = new System.Drawing.Size(476, 389);
             this.txtNew.TabIndex = 5;
             this.txtNew.Text = resources.GetString("txtNew.Text");
-            this.txtNew.SelectionBackColor = Color.Yellow;
             // 
             // Form1
             // 
@@ -106,6 +104,7 @@ namespace Gui_Demo
             this.Controls.Add(this.txtNew);
             this.Controls.Add(this.txtOld);
             this.Controls.Add(this.splitContainer1);
+            this.Cursor = System.Windows.Forms.Cursors.Default;
             this.Name = "Form1";
             this.Text = "Form1";
             this.splitContainer1.Panel1.ResumeLayout(false);

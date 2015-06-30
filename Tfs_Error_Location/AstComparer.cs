@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using ICSharpCode.NRefactory.CSharp;
@@ -9,6 +10,7 @@ using ICSharpCode.NRefactory.TypeSystem;
 using Mono.CSharp;
 using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
 using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
+using ParameterModifier = ICSharpCode.NRefactory.CSharp.ParameterModifier;
 
 namespace Tfs_Error_Location
 {
@@ -25,12 +27,6 @@ namespace Tfs_Error_Location
             Deleted
         }
 
-        /// <summary>
-        /// A flag which indicates if changes to comments should also be taken into account
-        /// when changes of a method are calculated. If it is true, all comments are ignored.
-        /// </summary>
-        private const bool s_IgnoreComments = true;
-
         private const string s_CommentString = "Comment";
 
         /// <summary>
@@ -41,10 +37,13 @@ namespace Tfs_Error_Location
         /// 4) if no match was found then the method was either added or deleted
         /// </summary>
         /// <param name="oldFileContent">the content of the old file</param>
-        /// <param name="oldFileName"></param>
+        /// <param name="oldFileName">the fileName of the old file</param>
         /// <param name="newFileContent">the content of the new file</param>
-        /// <param name="newFileName"></param>
-        /// <param name="errorLogStream"></param>
+        /// <param name="newFileName">the fileName of the new file</param>
+        /// <param name="errorLogStream">contains the stream with all errors</param>
+        /// <param name="ignoreComments">A flag which indicates if changes to comments 
+        /// should also be taken into account when changes of a method are calculated.
+        /// If it is true, all comments are ignored.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
         /// and a list of their corresponding methods as values, null otherwise</returns>
         internal static Dictionary<MethodStatus, List<MethodDeclaration>> CompareSyntaxTrees(
@@ -52,7 +51,8 @@ namespace Tfs_Error_Location
             string oldFileName,
             string newFileContent,
             string newFileName,
-            out MemoryStream errorLogStream)
+            out MemoryStream errorLogStream,
+            bool ignoreComments = true)
         {
             //retrieve the syntaxTrees for the old and the new file
             SyntaxTree oldTree = GetSyntaxTree(oldFileContent, oldFileName);
@@ -81,7 +81,7 @@ namespace Tfs_Error_Location
                 (oldMethods, newMethods, out addedMethods, out deletedMethods);
 
             Dictionary<MethodStatus, List<MethodDeclaration>> result = CompareMatchedMethods
-                (methodMapping);
+                (methodMapping, ignoreComments);
 
             //add the added and deleted Method with their corresponding status to result
             result[MethodStatus.Added] = addedMethods;
@@ -145,6 +145,67 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
+        /// creates the fully classified methodName of a method.
+        /// (namespace.type1.type2.methodName)
+        /// </summary>
+        /// <param name="method">the method for which the name should be returned</param>
+        /// <returns>the fully classified methodName</returns>
+        public static string GetFullyQualifiedMethodName(MethodDeclaration method)
+        {
+            TypeDeclaration classType = method.GetParent<TypeDeclaration>();
+            AstNode nextParent = classType.Parent;
+
+            string fullClassName = GetClassName(classType) + "." + method.Name;
+
+            //a class could be defined within a class
+            //therefore, each class name is added to the fully qualified name
+            //finally the namespace is added
+            while (nextParent != null)
+            {
+                if (nextParent.GetType() == typeof(TypeDeclaration))
+                {
+                    fullClassName = GetClassName((TypeDeclaration)nextParent) + "." + fullClassName;
+                }
+                else
+                {
+                    //reached the namespace declaration
+                    NamespaceDeclaration namespaceDeclaration =
+                        method.GetParent<NamespaceDeclaration>();
+
+                    if (namespaceDeclaration != null)
+                    {
+                        fullClassName = namespaceDeclaration.Name + "." + fullClassName;
+                    }
+
+                    return fullClassName;
+                }
+
+                nextParent = nextParent.Parent;
+            }
+
+            return fullClassName;
+        }
+
+        /// <summary>
+        /// gets the name attribute for the given type and returns it string value (=className)
+        /// </summary>
+        /// <param name="type">the type from which the className should be retrieved</param>
+        /// <returns>the value of the name attribute of a given 
+        /// typedeclaration (= className)</returns>
+        private static string GetClassName(TypeDeclaration type)
+        {
+            var nameProperty =
+                type.GetType()
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                        .Where(s => s.Name.Equals("Name"));
+
+            object nameValue = nameProperty.First().GetValue(type, null);
+            string className = nameValue.ToString();
+
+            return className;
+        }
+
+        /// <summary>
         /// Create a methodMapping by comparing the names of methods.
         /// The methods were no mapping was found are either added or deleted.
         /// </summary>
@@ -200,7 +261,7 @@ namespace Tfs_Error_Location
             MethodDeclaration oldMethod,
             IEnumerable<MethodDeclaration> newMethods)
         {
-            string methodName = oldMethod.Name;
+            string methodName = GetFullyQualifiedMethodName(oldMethod);
 
             //null is returned if no matching method was found
             foreach (MethodDeclaration newMethod in newMethods)
@@ -208,7 +269,7 @@ namespace Tfs_Error_Location
                 //do specific comparisons
                 //for now only the name
 
-                if (methodName == newMethod.Name)
+                if (methodName == GetFullyQualifiedMethodName(newMethod))
                 {
                     return newMethod;
                 }
@@ -250,10 +311,13 @@ namespace Tfs_Error_Location
         /// 4) Compare MethodBody
         /// </summary>
         /// <param name="methodMapping">a mapping of the matching methods</param>
+        /// <param name="ignoreComments">indicates if comments should be taken into
+        /// account while calculating the methodcomparison result</param>
         /// <returns>a dictionary containing the methods which were changed and the 
         /// methods which were not changed.</returns>
         private static Dictionary<MethodStatus, List<MethodDeclaration>> CompareMatchedMethods(
-            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping)
+            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping,
+            bool ignoreComments)
         {
             Dictionary<MethodStatus, List<MethodDeclaration>> result =
                 new Dictionary<MethodStatus, List<MethodDeclaration>>
@@ -270,7 +334,7 @@ namespace Tfs_Error_Location
                 bool hasNoChanges = CompareMethodModifiers(oldMethod, newMethod) &&
                                     CompareReturnValueType(oldMethod, newMethod) &&
                                     CompareParameters(oldMethod, newMethod) &&
-                                    CompareMethodBody(oldMethod, newMethod);
+                                    CompareMethodBody(oldMethod, newMethod, ignoreComments);
 
                 if (hasNoChanges)
                 {
@@ -406,10 +470,13 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="oldMethod">contains the old MethodDeclaration</param>
         /// <param name="newMethod">contains the new MethodDeclaration</param>
+        /// <param name="ignoreComments">indicates if comments should be taken into
+        /// account while calculating the methodcomparison result</param>
         /// <returns>true if the methods have the same body, false otherwise</returns>
         private static bool CompareMethodBody(
             MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
+            MethodDeclaration newMethod,
+            bool ignoreComments)
         {
             bool result = true;
 
@@ -421,7 +488,7 @@ namespace Tfs_Error_Location
 
             //Comments are ignored if s_IgnoreComments == true
             //otherwise, comment changes indicate that the method has changed.
-            if (s_IgnoreComments)
+            if (ignoreComments)
             {
                 result = TraverseMethodBodyIgnoringComments(oldChilds, newChilds);
             }
@@ -566,7 +633,6 @@ namespace Tfs_Error_Location
             string signature = String.Empty;
             signature += GetModifiersAsString(method.Modifiers) + method.ReturnType + " " +
                          method.Name;
-            //    GetParametersAsStrings(method.Parameters);
 
             return signature;
         }
@@ -594,20 +660,6 @@ namespace Tfs_Error_Location
             }
 
             return result;
-        }
-
-        private static string GetParametersAsStrings(IEnumerable<ParameterDeclaration> parameters)
-        {
-            string parameterString = "( ";
-
-            foreach (ParameterDeclaration parameter in parameters)
-            {
-                parameterString += parameter.GetText() + " ";
-            }
-
-            parameterString += ")";
-
-            return parameterString;
         }
     }
 }

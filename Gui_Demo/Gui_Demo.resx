@@ -174,7 +174,7 @@ using System.Text;
 
 namespace Tfs_Error_Location
 {
-    class TestFile2
+    class TestFile1
     {
         public void Main(string[] args)
         {
