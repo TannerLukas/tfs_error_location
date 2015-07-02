@@ -16,6 +16,8 @@ namespace Tfs_Error_Location
         private const string s_ErrorWrongUsage =
             "Error: Wrong Usage.\r\n" + "Usage: no parameters | oldFileName newFileName";
 
+        private const string s_OutputSeparator = "---------------------------------\r\n";
+
         private static void Main(string[] args)
         {
             string oldFileName;
@@ -55,7 +57,7 @@ namespace Tfs_Error_Location
             }
 
             MemoryStream errorLogStream;
-            Dictionary<MethodStatus, List<MethodDeclaration>> methodComparisonResult =
+            Dictionary<MethodStatus, List<Method>> methodComparisonResult =
                 AstComparer.CompareSyntaxTrees
                     (oldFileContent, oldFileName, newFileContent, newFileName, out errorLogStream);
 
@@ -92,35 +94,32 @@ namespace Tfs_Error_Location
             return false;
         }
 
-        private static void PrintReport(
-            Dictionary<MethodStatus, List<MethodDeclaration>> methodsWithStatus)
+        private static void PrintReport(Dictionary<MethodStatus, List<Method>> methodsWithStatus)
         {
-            Console.WriteLine("Methods with no changes: ");
-            foreach (MethodDeclaration method in methodsWithStatus[MethodStatus.NotChanged])
-            {
-                Console.WriteLine(AstComparer.GetFullyQualifiedMethodName(method));
-            }
+            PrintMethodStatus
+                ("Methods with no changes: ", methodsWithStatus[MethodStatus.NotChanged]);
+            PrintMethodStatus("Methods with changes: ", methodsWithStatus[MethodStatus.Changed]);
+            PrintMethodStatus("Added Methods: ", methodsWithStatus[MethodStatus.Added]);
+            PrintMethodStatus("Deleted Methods: ", methodsWithStatus[MethodStatus.Deleted]);
+        }
 
-            Console.WriteLine("---------------------------");
-            Console.WriteLine("Methods with changes: ");
-            foreach (MethodDeclaration method in methodsWithStatus[MethodStatus.Changed])
+        private static void PrintMethodStatus(
+            string headLine,
+            List<Method> methods)
+        {
+            Console.WriteLine(headLine);
+            if (methods.Any())
             {
-                Console.WriteLine(AstComparer.GetFullyQualifiedMethodName(method));
+                foreach (Method method in methods)
+                {
+                    Console.WriteLine(method.FullyQualifiedName);
+                }
             }
-
-            Console.WriteLine("---------------------------");
-            Console.WriteLine("Added Methods: ");
-            foreach (MethodDeclaration method in methodsWithStatus[MethodStatus.Added])
+            else
             {
-                Console.WriteLine(AstComparer.GetFullyQualifiedMethodName(method));
+                Console.WriteLine("none");
             }
-
-            Console.WriteLine("---------------------------");
-            Console.WriteLine("Deleted Methods: ");
-            foreach (MethodDeclaration method in methodsWithStatus[MethodStatus.Deleted])
-            {
-                Console.WriteLine(AstComparer.GetFullyQualifiedMethodName(method));
-            }
+            Console.WriteLine(s_OutputSeparator);
         }
     }
 }

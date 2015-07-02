@@ -74,6 +74,7 @@
   <ItemGroup>
     <Compile Include="AstComparer.cs" />
     <Compile Include="FileProvider.cs" />
+    <Compile Include="Method.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TestFile1.cs" />

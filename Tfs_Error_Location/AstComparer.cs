@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.TypeSystem;
 using Mono.CSharp;
@@ -46,7 +47,7 @@ namespace Tfs_Error_Location
         /// If it is true, all comments are ignored.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
         /// and a list of their corresponding methods as values, null otherwise</returns>
-        internal static Dictionary<MethodStatus, List<MethodDeclaration>> CompareSyntaxTrees(
+        internal static Dictionary<MethodStatus, List<Method>> CompareSyntaxTrees(
             string oldFileContent,
             string oldFileName,
             string newFileContent,
@@ -68,19 +69,19 @@ namespace Tfs_Error_Location
             }
 
             //get all methods for both files
-            IEnumerable<MethodDeclaration> oldMethods = GetAllMethodDeclarations(oldTree);
-            IEnumerable<MethodDeclaration> newMethods = GetAllMethodDeclarations(newTree);
+            IEnumerable<Method> oldMethods = GetAllMethodDeclarations(oldTree);
+            IEnumerable<Method> newMethods = GetAllMethodDeclarations(newTree);
 
             //create a methodMapping
             //this is needed because we need to know which methods should be compared
             //a new location for a method in the code file is ignored
             //renaming is not handled yet
-            List<MethodDeclaration> addedMethods;
-            List<MethodDeclaration> deletedMethods;
-            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping = CreateMethodMapping
+            List<Method> addedMethods;
+            List<Method> deletedMethods;
+            Dictionary<Method, Method> methodMapping = CreateMethodMapping
                 (oldMethods, newMethods, out addedMethods, out deletedMethods);
 
-            Dictionary<MethodStatus, List<MethodDeclaration>> result = CompareMatchedMethods
+            Dictionary<MethodStatus, List<Method>> result = CompareMatchedMethods
                 (methodMapping, ignoreComments);
 
             //add the added and deleted Method with their corresponding status to result
@@ -134,13 +135,27 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// retrieves all methodDeclarations from the given SyntaxTree
+        /// retrieves all methodDeclarations from the given SyntaxTree.
+        /// for each methodDeclaration a Method object with its properties is created
         /// </summary>
         /// <param name="tree">the tree from which the methods should be retrieved</param>
-        /// <returns>a list of all methodDeclarations in a SyntaxTree</returns>
-        private static IEnumerable<MethodDeclaration> GetAllMethodDeclarations(SyntaxTree tree)
+        /// <returns>a list of all methods in a SyntaxTree</returns>
+        private static IEnumerable<Method> GetAllMethodDeclarations(SyntaxTree tree)
         {
-            IEnumerable<MethodDeclaration> methods = tree.Descendants.OfType<MethodDeclaration>();
+            IEnumerable<MethodDeclaration> methodDeclarations = tree.Descendants.OfType<MethodDeclaration>();
+            List<Method> methods = new List<Method>();
+
+            foreach (MethodDeclaration methodDeclaration in methodDeclarations)
+            {
+                //a method contains the methodDeclaration, the fully qualified method name
+                //the method signature and a list of all changed astNodes
+                methods.Add
+                    (new Method
+                        (methodDeclaration, new List<AstNode>(),
+                            GetFullyQualifiedMethodName(methodDeclaration),
+                            GetMethodSignatureString(methodDeclaration)));
+            }
+
             return methods;
         }
 
@@ -197,7 +212,7 @@ namespace Tfs_Error_Location
             var nameProperty =
                 type.GetType()
                     .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                        .Where(s => s.Name.Equals("Name"));
+                    .Where(s => s.Name.Equals("Name"));
 
             object nameValue = nameProperty.First().GetValue(type, null);
             string className = nameValue.ToString();
@@ -214,21 +229,21 @@ namespace Tfs_Error_Location
         /// <param name="addedMethods">contains the methods which were added</param>
         /// <param name="deletedMethods">contains the methods which were deleted</param>
         /// <returns>a dictionary of matching methods</returns>
-        private static Dictionary<MethodDeclaration, MethodDeclaration> CreateMethodMapping(
-            IEnumerable<MethodDeclaration> oldMethods,
-            IEnumerable<MethodDeclaration> newMethods,
-            out List<MethodDeclaration> addedMethods,
-            out List<MethodDeclaration> deletedMethods)
+        private static Dictionary<Method, Method> CreateMethodMapping(
+            IEnumerable<Method> oldMethods,
+            IEnumerable<Method> newMethods,
+            out List<Method> addedMethods,
+            out List<Method> deletedMethods)
         {
-            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping =
-                new Dictionary<MethodDeclaration, MethodDeclaration>();
+            Dictionary<Method, Method> methodMapping =
+                new Dictionary<Method, Method>();
 
-            deletedMethods = new List<MethodDeclaration>();
+            deletedMethods = new List<Method>();
 
-            foreach (MethodDeclaration oldMethod in oldMethods)
+            foreach (Method oldMethod in oldMethods)
             {
                 //try to find the old method declaration in the new file
-                MethodDeclaration matchingMethod = FindMatchingMethodDeclaration
+                Method matchingMethod = FindMatchingMethodDeclaration
                     (oldMethod, newMethods);
 
                 if (matchingMethod != null)
@@ -257,19 +272,19 @@ namespace Tfs_Error_Location
         /// <param name="oldMethod">the method to which a matching method should be found</param>
         /// <param name="newMethods">the list of all MethodDeclarations of the new file</param>
         /// <returns>on success: the matchingMethod, null otherwise</returns>
-        private static MethodDeclaration FindMatchingMethodDeclaration(
-            MethodDeclaration oldMethod,
-            IEnumerable<MethodDeclaration> newMethods)
+        private static Method FindMatchingMethodDeclaration(
+            Method oldMethod,
+            IEnumerable<Method> newMethods)
         {
-            string methodName = GetFullyQualifiedMethodName(oldMethod);
+            string methodName = oldMethod.FullyQualifiedName;
 
             //null is returned if no matching method was found
-            foreach (MethodDeclaration newMethod in newMethods)
+            foreach (Method newMethod in newMethods)
             {
                 //do specific comparisons
                 //for now only the name
 
-                if (methodName == GetFullyQualifiedMethodName(newMethod))
+                if (methodName == newMethod.FullyQualifiedName)
                 {
                     return newMethod;
                 }
@@ -285,13 +300,13 @@ namespace Tfs_Error_Location
         /// <param name="mappedMethods">the list of methods where a mapping was already found</param>
         /// <param name="newMethods">the list of all MethodDeclarations of the new file</param>
         /// <returns>a list of methods which were added in the new file</returns>
-        private static List<MethodDeclaration> FindAllNewMethodDeclarations(
-            IEnumerable<MethodDeclaration> mappedMethods,
-            IEnumerable<MethodDeclaration> newMethods)
+        private static List<Method> FindAllNewMethodDeclarations(
+            IEnumerable<Method> mappedMethods,
+            IEnumerable<Method> newMethods)
         {
-            List<MethodDeclaration> addedMethods = new List<MethodDeclaration>();
+            List<Method> addedMethods = new List<Method>();
 
-            foreach (MethodDeclaration newMethod in newMethods)
+            foreach (Method newMethod in newMethods)
             {
                 //a non existing mapping indicates that the method was added 
                 if (!mappedMethods.Contains(newMethod))
@@ -305,50 +320,49 @@ namespace Tfs_Error_Location
 
         /// <summary>
         /// compares the methods to which a mapping was found in the following way:
-        /// 1) compare Modifiers
-        /// 2) compare ReturnValueType
-        /// 3) compare Parameters
-        /// 4) Compare MethodBody
+        /// traverse through the childNodes of both Methods and compare them
         /// </summary>
         /// <param name="methodMapping">a mapping of the matching methods</param>
         /// <param name="ignoreComments">indicates if comments should be taken into
         /// account while calculating the methodcomparison result</param>
-        /// <returns>a dictionary containing the methods which were changed and the 
+        /// <returns>a dictionary containing the changedmethods and the 
         /// methods which were not changed.</returns>
-        private static Dictionary<MethodStatus, List<MethodDeclaration>> CompareMatchedMethods(
-            Dictionary<MethodDeclaration, MethodDeclaration> methodMapping,
+        private static Dictionary<MethodStatus, List<Method>> CompareMatchedMethods(
+            Dictionary<Method, Method> methodMapping,
             bool ignoreComments)
         {
-            Dictionary<MethodStatus, List<MethodDeclaration>> result =
-                new Dictionary<MethodStatus, List<MethodDeclaration>>
+            Dictionary<MethodStatus, List<Method>> result =
+                new Dictionary<MethodStatus, List<Method>>
                 {
-                    {MethodStatus.NotChanged, new List<MethodDeclaration>()},
-                    {MethodStatus.Changed, new List<MethodDeclaration>()}
+                    {MethodStatus.NotChanged, new List<Method>()},
+                    {MethodStatus.Changed, new List<Method>()}
                 };
 
-            foreach (KeyValuePair<MethodDeclaration, MethodDeclaration> pair in methodMapping)
+            foreach (KeyValuePair<Method, Method> pair in methodMapping)
             {
-                MethodDeclaration oldMethod = pair.Key;
-                MethodDeclaration newMethod = pair.Value;
+                Method oldMethod = pair.Key;
+                Method newMethod = pair.Value;
+                /*
+                CompareMethodModifiers(oldMethod, newMethod) &&
+                CompareReturnValueType(oldMethod, newMethod) &&
+                CompareParameters(oldMethod, newMethod)
+                 * */
+                AstNode changeNode = CompareWholeMethods(oldMethod.MethodDecl, newMethod.MethodDecl, ignoreComments);
 
-                bool hasNoChanges = CompareMethodModifiers(oldMethod, newMethod) &&
-                                    CompareReturnValueType(oldMethod, newMethod) &&
-                                    CompareParameters(oldMethod, newMethod) &&
-                                    CompareMethodBody(oldMethod, newMethod, ignoreComments);
-
-                if (hasNoChanges)
+                if (changeNode != null)
                 {
-                    result[MethodStatus.NotChanged].Add(newMethod);
+                    newMethod.AddChangeNode(changeNode);
+                    result[MethodStatus.Changed].Add(newMethod);
                 }
                 else
                 {
-                    result[MethodStatus.Changed].Add(newMethod);
+                    result[MethodStatus.NotChanged].Add(newMethod);
                 }
             }
 
             return result;
         }
-
+      
         /// <summary>
         /// compares the modifiers of two methods. As the Modifier Type is
         /// an enum they could be compared directly.
@@ -418,7 +432,6 @@ namespace Tfs_Error_Location
                 GetParameterAttributes
                     (parameter, out oldParameterName, out oldParameterType, out oldParameterModifier);
 
-
                 //retrieve the corresponding attributes from the newParameter
                 ParameterDeclaration newParameter = newParameters.ElementAt(counter);
                 string newParameterName;
@@ -465,7 +478,7 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// 1) retrieves all childnodes from the methodbodies
+        /// 1) retrieves all childnodes from the method
         /// 2) traverses through their children and compares them
         /// </summary>
         /// <param name="oldMethod">contains the old MethodDeclaration</param>
@@ -473,32 +486,26 @@ namespace Tfs_Error_Location
         /// <param name="ignoreComments">indicates if comments should be taken into
         /// account while calculating the methodcomparison result</param>
         /// <returns>true if the methods have the same body, false otherwise</returns>
-        private static bool CompareMethodBody(
+        private static AstNode CompareWholeMethods(
             MethodDeclaration oldMethod,
             MethodDeclaration newMethod,
             bool ignoreComments)
         {
-            bool result = true;
-
-            BlockStatement oldBody = oldMethod.Body;
-            IEnumerable<AstNode> oldChilds = oldBody.Children;
-
-            BlockStatement newBody = newMethod.Body;
-            IEnumerable<AstNode> newChilds = newBody.Children;
+            AstNode change = null;
 
             //Comments are ignored if s_IgnoreComments == true
             //otherwise, comment changes indicate that the method has changed.
             if (ignoreComments)
             {
-                result = TraverseMethodBodyIgnoringComments(oldChilds, newChilds);
+                change = TraverseMethodBodyIgnoringComments(oldMethod.Children, newMethod.Children);
             }
+
             else
             {
-                result = TraverseMethodBody(oldChilds, newChilds);
+                change = TraverseMethodBody(oldMethod.Children, newMethod.Children);
             }
 
-
-            return result;
+            return change;
         }
 
         /// <summary>
@@ -509,19 +516,19 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="oldChildren">contains the old childNodes</param>
         /// <param name="newChildren">contains the new childNodes</param>
-        /// <returns>true if all old childNodes are equal to all new childNodes, 
-        /// false otherwise</returns>
-        private static bool TraverseMethodBodyIgnoringComments(
+        /// <returns>if a changes was found: the AstNode where the first 
+        /// change is detected, null otherwise</returns>
+        private static AstNode TraverseMethodBodyIgnoringComments(
             IEnumerable<AstNode> oldChildren,
             IEnumerable<AstNode> newChildren)
         {
             int counter = 0;
-            bool result = true;
+            AstNode change = null;
             foreach (AstNode oldChild in oldChildren)
             {
                 if (counter >= newChildren.Count())
                 {
-                    return false;
+                    return null;
                 }
 
                 //the role of a node indicates if it is a comment or not
@@ -547,12 +554,16 @@ namespace Tfs_Error_Location
                 {
                     if (!newChild.HasChildren)
                     {
-                        return false;
+                        change = newChild;
+                        return change;
                     }
 
-                    result = result &&
-                             TraverseMethodBodyIgnoringComments
-                                 (oldChild.Children, newChild.Children);
+                    change = TraverseMethodBodyIgnoringComments
+                        (oldChild.Children, newChild.Children);
+                    if (change != null)
+                    {
+                        return change;
+                    }
                 }
                 else
                 {
@@ -560,14 +571,15 @@ namespace Tfs_Error_Location
                     string newText = newChild.GetText();
                     if (!old.Equals(newText))
                     {
-                        return false;
+                        change = newChild;
+                        return change;
                     }
                 }
 
                 counter++;
             }
 
-            return result;
+            return change;
         }
 
         /// <summary>
@@ -579,17 +591,18 @@ namespace Tfs_Error_Location
         /// <param name="newChildren">contains the new childNodes</param>
         /// <returns>true if all old childNodes are equal to all new childNodes, 
         /// false otherwise</returns>
-        private static bool TraverseMethodBody(
+        private static AstNode TraverseMethodBody(
             IEnumerable<AstNode> oldChildren,
             IEnumerable<AstNode> newChildren)
         {
             int counter = 0;
-            bool result = true;
+
+            AstNode change = null;
             foreach (AstNode oldChild in oldChildren)
             {
                 if (counter >= newChildren.Count())
                 {
-                    return false;
+                    return null;
                 }
 
                 AstNode newChild = newChildren.ElementAt(counter);
@@ -601,10 +614,15 @@ namespace Tfs_Error_Location
                 {
                     if (!newChild.HasChildren)
                     {
-                        return false;
+                        change = newChild;
+                        return change;
                     }
 
-                    result = result && TraverseMethodBody(oldChild.Children, newChild.Children);
+                    change = TraverseMethodBody(oldChild.Children, newChild.Children);
+                    if (change != null)
+                    {
+                        return change;
+                    }
                 }
                 else
                 {
@@ -612,14 +630,15 @@ namespace Tfs_Error_Location
                     string newText = newChild.GetText();
                     if (!old.Equals(newText))
                     {
-                        return false;
+                        change = newChild;
+                        return change;
                     }
                 }
 
                 counter++;
             }
 
-            return result;
+            return change;
         }
 
         /// <summary>

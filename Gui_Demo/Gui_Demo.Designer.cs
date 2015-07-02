@@ -4,7 +4,7 @@ using Tfs_Error_Location;
 
 namespace Gui_Demo
 {
-    partial class Form1
+    partial class GuiDemo
     {
         /// <summary>
         /// Required designer variable.
@@ -32,7 +32,7 @@ namespace Gui_Demo
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(GuiDemo));
             this.btnCompare = new System.Windows.Forms.Button();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.trView = new System.Windows.Forms.TreeView();
@@ -74,9 +74,9 @@ namespace Gui_Demo
             // 
             // trView
             // 
-            this.trView.Location = new System.Drawing.Point(337, 3);
+            this.trView.Location = new System.Drawing.Point(191, 3);
             this.trView.Name = "trView";
-            this.trView.Size = new System.Drawing.Size(328, 149);
+            this.trView.Size = new System.Drawing.Size(623, 149);
             this.trView.TabIndex = 0;
             this.trView.NodeMouseDoubleClick += new System.Windows.Forms.TreeNodeMouseClickEventHandler(this.OnNodeClick);
             // 
@@ -96,7 +96,7 @@ namespace Gui_Demo
             this.txtNew.TabIndex = 5;
             this.txtNew.Text = resources.GetString("txtNew.Text");
             // 
-            // Form1
+            // GuiDemo
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
@@ -105,7 +105,7 @@ namespace Gui_Demo
             this.Controls.Add(this.txtOld);
             this.Controls.Add(this.splitContainer1);
             this.Cursor = System.Windows.Forms.Cursors.Default;
-            this.Name = "Form1";
+            this.Name = "GuiDemo";
             this.Text = "Form1";
             this.splitContainer1.Panel1.ResumeLayout(false);
             this.splitContainer1.Panel2.ResumeLayout(false);
