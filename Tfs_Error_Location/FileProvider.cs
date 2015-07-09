@@ -6,43 +6,28 @@ using System.Text;
 
 namespace Tfs_Error_Location
 {
-    class FileProvider
+    internal class FileProvider
     {
         /// <summary>
-        /// reads the whole content of a stream into a string
-        /// </summary>
-        /// <param name="stream">the stream which should be read</param>
-        /// <returns>the contents of the stream as a string</returns>
-        public static string ReadStreamIntoString(Stream stream)
-        {
-            stream.Position = 0;
-            string text;
-            using (StreamReader reader = new StreamReader(stream))
-            {
-                text = reader.ReadToEnd();
-            }
-
-            return text;
-        }
-
-        /// <summary>
-        /// reads the contents of a file into a stream.
+        /// reads the contents of a file into a string.
         /// </summary>
         /// <param name="fileName">contains the path to the file</param>
         /// <returns>on success: a stream containing the contents of the file,
         /// null otherwise</returns>
-        public static Stream ReadFile(string fileName)
+        public static string ReadFile(string fileName)
         {
-            //check if File exists
-            if (File.Exists(fileName))
+            try
             {
-                using (FileStream fileStream = File.OpenRead(fileName))
+                //check if File exists
+                using (StreamReader reader = new StreamReader(fileName))
                 {
-                    MemoryStream memStream = new MemoryStream();
-                    memStream.SetLength(fileStream.Length);
-                    fileStream.Read(memStream.GetBuffer(), 0, (int)fileStream.Length);
-                    return memStream;
+                    string fileContent = reader.ReadToEnd();
+                    return fileContent;
                 }
+            }
+            catch (IOException exception)
+            {
+                Console.WriteLine(exception.Message);
             }
 
             return null;
@@ -53,7 +38,7 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="oldFile">contains the contents of the oldFile</param>
         /// <param name="newFile">contains the contents of the newFile</param>
-        internal static void CreateExampleFiles(
+        public static void CreateExampleFiles(
             out string oldFile,
             out string newFile)
         {

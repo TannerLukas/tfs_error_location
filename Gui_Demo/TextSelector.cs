@@ -23,9 +23,10 @@ namespace Gui_Demo
             TreeNode node,
             RichTextBox oldTextBox,
             RichTextBox newTextBox,
-            Dictionary<AstComparer.MethodStatus, List<Method>> methodComparisonResult)
+            MethodComparisonResult methodComparisonResult)
         {
-            if (node == null)
+            if (node == null ||
+                methodComparisonResult == null)
             {
                 return;
             }
@@ -41,16 +42,19 @@ namespace Gui_Demo
 
             int nodeLevel = node.Level;
 
+            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> statusResult =
+                methodComparisonResult.GetMethodsForStatus();
+
             switch (nodeLevel)
             {
                 case 0:
-                    SelectAllMethodsForStatus(node, oldTextBox, newTextBox, methodComparisonResult);
+                    SelectAllMethodsForStatus(node, oldTextBox, newTextBox, statusResult);
                     break;
                 case 1:
-                    SelectSingleMethod(node, oldTextBox, newTextBox, methodComparisonResult);
+                    SelectSingleMethod(node, oldTextBox, newTextBox, statusResult);
                     break;
                 case 2:
-                    SelectChangeEntryNode(node, oldTextBox, newTextBox, methodComparisonResult);
+                    SelectChangeEntryNode(node, oldTextBox, newTextBox, statusResult);
                     break;
                 default:
                     break;
@@ -61,16 +65,16 @@ namespace Gui_Demo
             TreeNode node,
             RichTextBox oldTextBox,
             RichTextBox newTextBox,
-            Dictionary<AstComparer.MethodStatus, List<Method>> methodComparisonResult)
+            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
         {
-            AstComparer.MethodStatus methodStatus = ParseMethodStatus(node.Text);
+            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(node.Text);
             RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
 
             if (methodComparisonResult[methodStatus].Any())
             {
                 foreach (Method method in methodComparisonResult[methodStatus])
                 {
-                    SelectText(method.SignatureString, searchBox);
+                    SelectText(method.Signature, searchBox);
                 }
 
                 searchBox.ScrollToCaret();
@@ -81,10 +85,10 @@ namespace Gui_Demo
             TreeNode node,
             RichTextBox oldTextBox,
             RichTextBox newTextBox,
-            Dictionary<AstComparer.MethodStatus, List<Method>> methodComparisonResult)
+            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
         {
             TreeNode parentNode = node.Parent;
-            AstComparer.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
+            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
 
             RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
 
@@ -93,19 +97,40 @@ namespace Gui_Demo
             Method method = methodComparisonResult[methodStatus].Find
                 (s => s.FullyQualifiedName.Equals(methodName));
 
-            SelectText(method.SignatureString, searchBox);
+            SelectText(method.Signature, searchBox);
             searchBox.ScrollToCaret();
         }
+
+        private static void SelectSingleMethod2(
+            TreeNode node,
+            RichTextBox oldTextBox,
+            RichTextBox newTextBox,
+            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
+        {
+            TreeNode parentNode = node.Parent;
+            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
+
+            RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
+
+            string methodName = node.Text;
+
+            Method method = methodComparisonResult[methodStatus].Find
+                (s => s.FullyQualifiedName.Equals(methodName));
+
+            SelectText(method.Signature, searchBox);
+            searchBox.ScrollToCaret();
+        }
+
 
         private static void SelectChangeEntryNode(
             TreeNode node,
             RichTextBox oldTextBox,
             RichTextBox newTextBox,
-            Dictionary<AstComparer.MethodStatus, List<Method>> methodComparisonResult)
+            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
         {
             //methodstatus node
             TreeNode parentNode = node.Parent.Parent;
-            AstComparer.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
+            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
             string methodName = node.Parent.Text;
 
             RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
@@ -115,7 +140,8 @@ namespace Gui_Demo
             Method method = methodComparisonResult[methodStatus].Find
                 (s => s.FullyQualifiedName.Equals(methodName));
 
-            if (method != null && method.ChangeNodes.Count > 0)
+            if (method != null &&
+                method.ChangeNodes.Count > 0)
             {
                 AstNode changedNode = method.ChangeNodes.First();
                 if (changedNode != null)
@@ -141,12 +167,12 @@ namespace Gui_Demo
         }
 
         private static RichTextBox GetTextBoxToSearchIn(
-            AstComparer.MethodStatus status,
+            MethodComparisonResult.MethodStatus status,
             RichTextBox oldTextBox,
             RichTextBox newTextBox)
         {
             RichTextBox box;
-            if (status == AstComparer.MethodStatus.Deleted)
+            if (status == MethodComparisonResult.MethodStatus.Deleted)
             {
                 box = oldTextBox;
             }
@@ -158,10 +184,11 @@ namespace Gui_Demo
         }
 
 
-        private static AstComparer.MethodStatus ParseMethodStatus(string methodStatus)
+        private static MethodComparisonResult.MethodStatus ParseMethodStatus(string methodStatus)
         {
-            AstComparer.MethodStatus status =
-                (AstComparer.MethodStatus)Enum.Parse(typeof(AstComparer.MethodStatus), methodStatus);
+            MethodComparisonResult.MethodStatus status =
+                (MethodComparisonResult.MethodStatus)
+                    Enum.Parse(typeof(MethodComparisonResult.MethodStatus), methodStatus);
 
             return status;
         }

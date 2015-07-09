@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.TypeSystem;
+using Mono.Cecil;
 using Mono.CSharp;
 using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
 using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
@@ -15,6 +16,9 @@ using ParameterModifier = ICSharpCode.NRefactory.CSharp.ParameterModifier;
 
 namespace Tfs_Error_Location
 {
+    /// <summary>
+    /// compares two syntaxtrees in order to find out which methods have changed.
+    /// </summary>
     public class AstComparer
     {
         /// <summary>
@@ -41,25 +45,24 @@ namespace Tfs_Error_Location
         /// <param name="oldFileName">the fileName of the old file</param>
         /// <param name="newFileContent">the content of the new file</param>
         /// <param name="newFileName">the fileName of the new file</param>
-        /// <param name="errorLogStream">contains the stream with all errors</param>
+        /// <param name="errorLogStream">is the stream to which the errors should be written</param>
         /// <param name="ignoreComments">A flag which indicates if changes to comments 
         /// should also be taken into account when changes of a method are calculated.
         /// If it is true, all comments are ignored.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
         /// and a list of their corresponding methods as values, null otherwise</returns>
-        internal static Dictionary<MethodStatus, List<Method>> CompareSyntaxTrees(
+        public static MethodComparisonResult CompareSyntaxTrees(
             string oldFileContent,
             string oldFileName,
             string newFileContent,
             string newFileName,
-            out MemoryStream errorLogStream,
+            MemoryStream errorLogStream,
             bool ignoreComments = true)
         {
             //retrieve the syntaxTrees for the old and the new file
             SyntaxTree oldTree = GetSyntaxTree(oldFileContent, oldFileName);
             SyntaxTree newTree = GetSyntaxTree(newFileContent, newFileName);
 
-            errorLogStream = new MemoryStream();
             StreamWriter errorLogWriter = new StreamWriter(errorLogStream);
 
             if (CheckSyntaxTreeErrors(oldTree, errorLogWriter) == false ||
@@ -81,43 +84,53 @@ namespace Tfs_Error_Location
             Dictionary<Method, Method> methodMapping = CreateMethodMapping
                 (oldMethods, newMethods, out addedMethods, out deletedMethods);
 
-            Dictionary<MethodStatus, List<Method>> result = CompareMatchedMethods
-                (methodMapping, ignoreComments);
+            MethodComparisonResult result = CompareMatchedMethods(methodMapping, ignoreComments);
 
             //add the added and deleted Method with their corresponding status to result
-            result[MethodStatus.Added] = addedMethods;
-            result[MethodStatus.Deleted] = deletedMethods;
+            result.AddAddedMethods(addedMethods);
+            result.AddDeletedMethods(deletedMethods);
 
             return result;
         }
 
         /// <summary>
-        /// checks if any syntax errors occurred in the syntaxTree.
-        /// prints the errors to the errorLogStream.
+        /// try to find a methodDeclaration in the newMethodDeclarations.
+        /// the comparison done by comparing the fully qualified names. if more
+        /// than one method exists with this name (overloading), then those methods
+        /// are compared via their signature string with parameters.
         /// </summary>
-        /// <param name="tree">the underlying syntaxtree to check</param>
-        /// <param name="errorLogWriter">StreamWriter used for all errors</param>
-        /// <returns>true if no errors occurred, false otherwise</returns>
-        private static bool CheckSyntaxTreeErrors(
-            SyntaxTree tree,
-            StreamWriter errorLogWriter)
+        /// <param name="oldMethod">the method to which a matching method should be found</param>
+        /// <param name="newMethods">the list of all MethodDeclarations of the new file</param>
+        /// <returns>on success: the matchingMethod, null otherwise</returns>
+        public static Method FindMatchingMethodDeclaration(
+            Method oldMethod,
+            IEnumerable<Method> newMethods)
         {
-            List<Error> errors = tree.Errors;
+            string methodName = oldMethod.FullyQualifiedName;
 
-            if (errors.Count == 0)
+            IEnumerable<Method> possibleMethods = newMethods.Where
+                (m => m.FullyQualifiedName.Equals(methodName));
+
+            if (possibleMethods.Count() == 1)
             {
-                return true;
+                //exactly one method with this name exists
+                return possibleMethods.First();
             }
-            else
+            else if (possibleMethods.Count() > 1)
             {
-                foreach (Error error in errors)
+                //compare the complete Signature (and parameters)
+                string methodSignature = oldMethod.SignatureWithParameters;
+
+                IEnumerable<Method> signatureMethods = possibleMethods.Where
+                    (m => m.SignatureWithParameters.Equals(methodSignature));
+
+                if (signatureMethods.Count() == 1)
                 {
-                    errorLogWriter.WriteLine
-                        ("Error occured in File {0} : {1}", tree.FileName, error.Message);
+                    return signatureMethods.First();
                 }
-                errorLogWriter.Flush();
-                return false;
             }
+
+            return null;
         }
 
         /// <summary>
@@ -142,18 +155,22 @@ namespace Tfs_Error_Location
         /// <returns>a list of all methods in a SyntaxTree</returns>
         private static IEnumerable<Method> GetAllMethodDeclarations(SyntaxTree tree)
         {
-            IEnumerable<MethodDeclaration> methodDeclarations = tree.Descendants.OfType<MethodDeclaration>();
+            IEnumerable<MethodDeclaration> methodDeclarations =
+                tree.Descendants.OfType<MethodDeclaration>();
             List<Method> methods = new List<Method>();
 
             foreach (MethodDeclaration methodDeclaration in methodDeclarations)
             {
                 //a method contains the methodDeclaration, the fully qualified method name
                 //the method signature and a list of all changed astNodes
+                string fullName = GetFullyQualifiedMethodName(methodDeclaration);
+                string signature = GetMethodSignatureString(methodDeclaration);
+                string signatureWithParameters = GetMethodSignatureWithParameters(methodDeclaration);
+
                 methods.Add
                     (new Method
-                        (methodDeclaration, new List<AstNode>(),
-                            GetFullyQualifiedMethodName(methodDeclaration),
-                            GetMethodSignatureString(methodDeclaration)));
+                        (methodDeclaration, new List<AstNode>(), fullName, signature,
+                            signatureWithParameters));
             }
 
             return methods;
@@ -165,12 +182,12 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="method">the method for which the name should be returned</param>
         /// <returns>the fully classified methodName</returns>
-        public static string GetFullyQualifiedMethodName(MethodDeclaration method)
+        private static string GetFullyQualifiedMethodName(MethodDeclaration method)
         {
             TypeDeclaration classType = method.GetParent<TypeDeclaration>();
             AstNode nextParent = classType.Parent;
 
-            string fullClassName = GetClassName(classType) + "." + method.Name;
+            string fullClassName = classType.Name + "." + method.Name;
 
             //a class could be defined within a class
             //therefore, each class name is added to the fully qualified name
@@ -179,19 +196,12 @@ namespace Tfs_Error_Location
             {
                 if (nextParent.GetType() == typeof(TypeDeclaration))
                 {
-                    fullClassName = GetClassName((TypeDeclaration)nextParent) + "." + fullClassName;
+                    fullClassName = ((TypeDeclaration)nextParent).Name + "." + fullClassName;
                 }
                 else
                 {
                     //reached the namespace declaration
-                    NamespaceDeclaration namespaceDeclaration =
-                        method.GetParent<NamespaceDeclaration>();
-
-                    if (namespaceDeclaration != null)
-                    {
-                        fullClassName = namespaceDeclaration.Name + "." + fullClassName;
-                    }
-
+                    fullClassName = ((NamespaceDeclaration)nextParent).Name + "." + fullClassName;
                     return fullClassName;
                 }
 
@@ -199,25 +209,6 @@ namespace Tfs_Error_Location
             }
 
             return fullClassName;
-        }
-
-        /// <summary>
-        /// gets the name attribute for the given type and returns it string value (=className)
-        /// </summary>
-        /// <param name="type">the type from which the className should be retrieved</param>
-        /// <returns>the value of the name attribute of a given 
-        /// typedeclaration (= className)</returns>
-        private static string GetClassName(TypeDeclaration type)
-        {
-            var nameProperty =
-                type.GetType()
-                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(s => s.Name.Equals("Name"));
-
-            object nameValue = nameProperty.First().GetValue(type, null);
-            string className = nameValue.ToString();
-
-            return className;
         }
 
         /// <summary>
@@ -235,16 +226,14 @@ namespace Tfs_Error_Location
             out List<Method> addedMethods,
             out List<Method> deletedMethods)
         {
-            Dictionary<Method, Method> methodMapping =
-                new Dictionary<Method, Method>();
-
+            Dictionary<Method, Method> methodMapping = new Dictionary<Method, Method>();
             deletedMethods = new List<Method>();
+            List<Method> newMethodsList = newMethods.ToList();
 
             foreach (Method oldMethod in oldMethods)
             {
                 //try to find the old method declaration in the new file
-                Method matchingMethod = FindMatchingMethodDeclaration
-                    (oldMethod, newMethods);
+                Method matchingMethod = FindMatchingMethodDeclaration(oldMethod, newMethodsList);
 
                 if (matchingMethod != null)
                 {
@@ -260,37 +249,9 @@ namespace Tfs_Error_Location
             }
 
             //find all methods which were added in the new file
-            addedMethods = FindAllNewMethodDeclarations(methodMapping.Values, newMethods);
+            addedMethods = FindAllNewMethodDeclarations(methodMapping.Values, newMethodsList);
 
             return methodMapping;
-        }
-
-        /// <summary>
-        /// try to find a methodDeclaration in the newMethodDeclarations.
-        /// the comparison is only done by comparing the names.
-        /// </summary>
-        /// <param name="oldMethod">the method to which a matching method should be found</param>
-        /// <param name="newMethods">the list of all MethodDeclarations of the new file</param>
-        /// <returns>on success: the matchingMethod, null otherwise</returns>
-        private static Method FindMatchingMethodDeclaration(
-            Method oldMethod,
-            IEnumerable<Method> newMethods)
-        {
-            string methodName = oldMethod.FullyQualifiedName;
-
-            //null is returned if no matching method was found
-            foreach (Method newMethod in newMethods)
-            {
-                //do specific comparisons
-                //for now only the name
-
-                if (methodName == newMethod.FullyQualifiedName)
-                {
-                    return newMethod;
-                }
-            }
-
-            return null;
         }
 
         /// <summary>
@@ -327,16 +288,11 @@ namespace Tfs_Error_Location
         /// account while calculating the methodcomparison result</param>
         /// <returns>a dictionary containing the changedmethods and the 
         /// methods which were not changed.</returns>
-        private static Dictionary<MethodStatus, List<Method>> CompareMatchedMethods(
+        private static MethodComparisonResult CompareMatchedMethods(
             Dictionary<Method, Method> methodMapping,
             bool ignoreComments)
         {
-            Dictionary<MethodStatus, List<Method>> result =
-                new Dictionary<MethodStatus, List<Method>>
-                {
-                    {MethodStatus.NotChanged, new List<Method>()},
-                    {MethodStatus.Changed, new List<Method>()}
-                };
+            MethodComparisonResult result = new MethodComparisonResult();
 
             foreach (KeyValuePair<Method, Method> pair in methodMapping)
             {
@@ -347,22 +303,23 @@ namespace Tfs_Error_Location
                 CompareReturnValueType(oldMethod, newMethod) &&
                 CompareParameters(oldMethod, newMethod)
                  * */
-                AstNode changeNode = CompareWholeMethods(oldMethod.MethodDecl, newMethod.MethodDecl, ignoreComments);
+                AstNode changeNode = CompareMethods
+                    (oldMethod.MethodDecl, newMethod.MethodDecl, ignoreComments);
 
                 if (changeNode != null)
                 {
                     newMethod.AddChangeNode(changeNode);
-                    result[MethodStatus.Changed].Add(newMethod);
+                    result.AddChangedMethod(newMethod);
                 }
                 else
                 {
-                    result[MethodStatus.NotChanged].Add(newMethod);
+                    result.AddNotChangedMethod(newMethod);
                 }
             }
 
             return result;
         }
-      
+
         /// <summary>
         /// compares the modifiers of two methods. As the Modifier Type is
         /// an enum they could be compared directly.
@@ -486,12 +443,12 @@ namespace Tfs_Error_Location
         /// <param name="ignoreComments">indicates if comments should be taken into
         /// account while calculating the methodcomparison result</param>
         /// <returns>true if the methods have the same body, false otherwise</returns>
-        private static AstNode CompareWholeMethods(
+        private static AstNode CompareMethods(
             MethodDeclaration oldMethod,
             MethodDeclaration newMethod,
             bool ignoreComments)
         {
-            AstNode change = null;
+            AstNode change;
 
             //Comments are ignored if s_IgnoreComments == true
             //otherwise, comment changes indicate that the method has changed.
@@ -499,7 +456,6 @@ namespace Tfs_Error_Location
             {
                 change = TraverseMethodBodyIgnoringComments(oldMethod.Children, newMethod.Children);
             }
-
             else
             {
                 change = TraverseMethodBody(oldMethod.Children, newMethod.Children);
@@ -524,11 +480,12 @@ namespace Tfs_Error_Location
         {
             int counter = 0;
             AstNode change = null;
+            AstNode newChild = null;
             foreach (AstNode oldChild in oldChildren)
             {
                 if (counter >= newChildren.Count())
                 {
-                    return null;
+                    return newChild;
                 }
 
                 //the role of a node indicates if it is a comment or not
@@ -538,7 +495,7 @@ namespace Tfs_Error_Location
                     continue;
                 }
 
-                AstNode newChild = newChildren.ElementAt(counter);
+                newChild = newChildren.ElementAt(counter);
 
                 //skip all comments
                 while (newChild.Role.ToString().Equals(s_CommentString))
@@ -642,18 +599,61 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// creates a method signature string.
+        /// creates a method signature string without the parameters.
         /// e.g. public static void Main
         /// </summary>
         /// <param name="method">the method for which the signature should be created</param>
-        /// <returns>a string of the method signature(modifers, returnValue, name, [parameters])</returns>
-        internal static string GetMethodSignatureString(MethodDeclaration method)
+        /// <returns>a string of the method signature(modifers, returnValue, name)</returns>
+        private static string GetMethodSignatureString(MethodDeclaration method)
         {
             string signature = String.Empty;
             signature += GetModifiersAsString(method.Modifiers) + method.ReturnType + " " +
                          method.Name;
 
             return signature;
+        }
+
+        /// <summary>
+        /// creates a method signature string including all parameters.
+        /// e.g. public static void Main
+        /// </summary>
+        /// <param name="method">the method for which the signature should be created</param>
+        /// <returns>a string of the method signature(modifers, returnValue, name, (parameters))</returns>
+        private static string GetMethodSignatureWithParameters(MethodDeclaration method)
+        {
+            string signature = String.Empty;
+            signature += GetModifiersAsString(method.Modifiers) + method.ReturnType + " " +
+                         method.Name + "(" + GetParametersAsStrings(method) + ")";
+
+            return signature;
+        }
+
+        /// <summary>
+        /// creates a string which contains all parameters of a method 
+        /// seperated by a ','
+        /// </summary>
+        /// <param name="method">the method from which the parameter string should 
+        /// be created</param>
+        /// <returns>a string containing all parameters, an empty string
+        /// if the method does not contain any parameters</returns>
+        private static string GetParametersAsStrings(MethodDeclaration method)
+        {
+            IEnumerable<ParameterDeclaration> parameters = method.Parameters;
+            string parameterString = String.Empty;
+
+            foreach (ParameterDeclaration parameter in parameters)
+            {
+                //add all parameters to the result string
+                parameterString = parameterString + parameter.GetText() + ",";
+            }
+
+            if (!parameterString.Equals(String.Empty))
+            {
+                // remove the ',' after the last parameter
+                parameterString = parameterString.Substring(0, parameterString.Length - 1);
+            }
+
+            return parameterString;
         }
 
         /// <summary>
@@ -664,21 +664,41 @@ namespace Tfs_Error_Location
         /// <returns>a string containing</returns>
         private static string GetModifiersAsString(Modifiers methodModifiers)
         {
-            string result = String.Empty;
-            if (methodModifiers.ToString().Contains(","))
+            //if the method contains more than one modifier, they are seperated by ", "
+            string result = methodModifiers.ToString();
+            result = result.Replace(", ", " ");
+
+            return result.ToLower();
+        }
+
+        /// <summary>
+        /// checks if any syntax errors occurred in the syntaxTree.
+        /// prints the errors to the errorLogStream.
+        /// </summary>
+        /// <param name="tree">the underlying syntaxtree to check</param>
+        /// <param name="errorLogWriter">StreamWriter used for all errors</param>
+        /// <returns>true if no errors occurred, false otherwise</returns>
+        private static bool CheckSyntaxTreeErrors(
+            SyntaxTree tree,
+            StreamWriter errorLogWriter)
+        {
+            List<Error> errors = tree.Errors;
+
+            if (errors.Count == 0)
             {
-                string[] mods = methodModifiers.ToString().Split(',');
-                foreach (string mod in mods)
-                {
-                    result += mod.Trim().ToLower() + " ";
-                }
+                return true;
             }
             else
             {
-                result = methodModifiers.ToString().ToLower() + " ";
+                foreach (Error error in errors)
+                {
+                    errorLogWriter.WriteLine
+                        ("Error occured in File {0} in Line {1} : {2}", tree.FileName,
+                            error.Region.BeginLine, error.Message);
+                }
+                errorLogWriter.Flush();
+                return false;
             }
-
-            return result;
         }
     }
 }

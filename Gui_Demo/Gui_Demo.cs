@@ -15,8 +15,7 @@ namespace Gui_Demo
 {
     public partial class GuiDemo : Form
     {
-        private Dictionary<AstComparer.MethodStatus, List<Method>>
-            m_MethodComparisonResult;
+        private MethodComparisonResult m_MethodComparisonResult;
 
         public GuiDemo()
         {
@@ -32,9 +31,10 @@ namespace Gui_Demo
 
             trView.Nodes.Clear();
 
-            MemoryStream stream;
+            MemoryStream errorLogStream = new MemoryStream();
+
             m_MethodComparisonResult = AstComparer.CompareSyntaxTrees
-                (oldText, "oldExampleFile.cs", newText, "newExampleFile.cs", out stream);
+                (oldText, "oldExampleFile.cs", newText, "newExampleFile.cs", errorLogStream);
 
             if (m_MethodComparisonResult == null)
             {
@@ -55,12 +55,15 @@ namespace Gui_Demo
         }
 
         private void CreateOutput(
-            Dictionary<AstComparer.MethodStatus, List<Method>> methodComparisonResult)
+            MethodComparisonResult methodComparisonResult)
         {
-            foreach (AstComparer.MethodStatus methodStatus in methodComparisonResult.Keys)
+            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> statusResult =
+                methodComparisonResult.GetMethodsForStatus();
+
+            foreach (MethodComparisonResult.MethodStatus methodStatus in statusResult.Keys)
             {
                 List<TreeNode> treeNodes = new List<TreeNode>();
-                foreach (Method method in methodComparisonResult[methodStatus])
+                foreach (Method method in statusResult[methodStatus])
                 {
                     List<TreeNode> changedNodes = new List<TreeNode>();
 

@@ -5,6 +5,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tfs_Error_Location", "Tfs_E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gui_Demo", "Gui_Demo\Gui_Demo.csproj", "{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TfsMethodChanges", "TfsMethodChanges\TfsMethodChanges.csproj", "{98BB3A2D-49BC-4E55-B1F4-32C14ADF3B9C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -19,6 +21,10 @@ Global
 		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Debug|x86.Build.0 = Debug|x86
 		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Release|x86.ActiveCfg = Release|x86
 		{85BF3C35-5FF3-4EFD-BA13-265083C44FF6}.Release|x86.Build.0 = Release|x86
+		{98BB3A2D-49BC-4E55-B1F4-32C14ADF3B9C}.Debug|x86.ActiveCfg = Debug|x86
+		{98BB3A2D-49BC-4E55-B1F4-32C14ADF3B9C}.Debug|x86.Build.0 = Debug|x86
+		{98BB3A2D-49BC-4E55-B1F4-32C14ADF3B9C}.Release|x86.ActiveCfg = Release|x86
+		{98BB3A2D-49BC-4E55-B1F4-32C14ADF3B9C}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

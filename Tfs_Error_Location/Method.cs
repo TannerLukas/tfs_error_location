@@ -9,19 +9,21 @@ namespace Tfs_Error_Location
     /// <summary>
     /// Contains several properties for a methodDeclaration.
     /// </summary>
-    class Method
+    public class Method
     {
 
         public Method(
             MethodDeclaration methodDecl,
             List<AstNode> changeNodes,
             string fullName,
-            string signature)
+            string signature,
+            string completeSignature)
         {
             MethodDecl = methodDecl;
             ChangeNodes = changeNodes;
             FullyQualifiedName = fullName;
-            SignatureString = signature;
+            Signature = signature;
+            SignatureWithParameters = completeSignature;
         }
 
         /// <summary>
@@ -53,11 +55,22 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// contains the signatur of a method.
+        /// contains the signature of a method.
         /// modifiers returnValueType methodName.
         /// e.g public static void Main
         /// </summary>
-        public string SignatureString
+        public string Signature
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// contains the signature with parameters of a method.
+        /// modifiers returnValueType methodName (parameters).
+        /// e.g public static void Main (string[] args)
+        /// </summary>
+        public string SignatureWithParameters
         {
             get;
             private set;

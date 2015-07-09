@@ -7,7 +7,7 @@ using System.Windows.Forms;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.Semantics;
 using ICSharpCode.NRefactory.TypeSystem;
-using MethodStatus = Tfs_Error_Location.AstComparer.MethodStatus;
+using MethodStatus = Tfs_Error_Location.MethodComparisonResult.MethodStatus;
 
 namespace Tfs_Error_Location
 {
@@ -36,19 +36,15 @@ namespace Tfs_Error_Location
             {
                 oldFileName = args[0];
                 newFileName = args[1];
+                oldFileContent = FileProvider.ReadFile(oldFileName);
+                newFileContent = FileProvider.ReadFile(newFileName);
 
-                Stream oldStream = FileProvider.ReadFile(oldFileName);
-                Stream newStream = FileProvider.ReadFile(newFileName);
-
-                if (
-                    !(CheckStreamNotNull(oldStream, oldFileName) &&
-                      CheckStreamNotNull(newStream, newFileName)))
+                if (oldFileContent == null ||
+                    newFileContent == null)
                 {
+                    //an error occured
                     return;
                 }
-
-                oldFileContent = FileProvider.ReadStreamIntoString(oldStream);
-                newFileContent = FileProvider.ReadStreamIntoString(newStream);
             }
             else
             {
@@ -56,23 +52,28 @@ namespace Tfs_Error_Location
                 return;
             }
 
-            MemoryStream errorLogStream;
-            Dictionary<MethodStatus, List<Method>> methodComparisonResult =
-                AstComparer.CompareSyntaxTrees
-                    (oldFileContent, oldFileName, newFileContent, newFileName, out errorLogStream);
+            using (MemoryStream errorLogStream = new MemoryStream())
+            {
+                MethodComparisonResult methodComparisonResult = AstComparer.CompareSyntaxTrees
+                    (oldFileContent, oldFileName, newFileContent, newFileName, errorLogStream);
 
-            if (methodComparisonResult != null)
-            {
-                //just for debug purposes
-                PrintReport(methodComparisonResult);
-            }
-            else
-            {
-                //errors occured
-                PrintErrorLogStream(errorLogStream);
+                if (methodComparisonResult != null)
+                {
+                    //just for debug purposes
+                    PrintReport(methodComparisonResult);
+                }
+                else
+                {
+                    //errors occured
+                    PrintErrorLogStream(errorLogStream);
+                }
             }
         }
 
+        /// <summary>
+        /// prints the errors to the console
+        /// </summary>
+        /// <param name="stream">contains the error messages</param>
         private static void PrintErrorLogStream(Stream stream)
         {
             stream.Position = 0;
@@ -81,28 +82,26 @@ namespace Tfs_Error_Location
             Console.WriteLine(errorMessage);
         }
 
-        private static bool CheckStreamNotNull(
-            Stream stream,
-            string fileName)
+        /// <summary>
+        /// prints the final report of the method comparison result
+        /// </summary>
+        /// <param name="methodComparison">the result of the AstComparer</param>
+        private static void PrintReport(MethodComparisonResult methodComparison)
         {
-            if (stream != null)
-            {
-                return true;
-            }
+            Dictionary<MethodStatus, List<Method>> statusResult =
+                methodComparison.GetMethodsForStatus();
 
-            Console.WriteLine("Error: File: {0} could not be read.", fileName);
-            return false;
+            PrintMethodStatus("Methods with no changes: ", statusResult[MethodStatus.NotChanged]);
+            PrintMethodStatus("Methods with changes: ", statusResult[MethodStatus.Changed]);
+            PrintMethodStatus("Added Methods: ", statusResult[MethodStatus.Added]);
+            PrintMethodStatus("Deleted Methods: ", statusResult[MethodStatus.Deleted]);
         }
 
-        private static void PrintReport(Dictionary<MethodStatus, List<Method>> methodsWithStatus)
-        {
-            PrintMethodStatus
-                ("Methods with no changes: ", methodsWithStatus[MethodStatus.NotChanged]);
-            PrintMethodStatus("Methods with changes: ", methodsWithStatus[MethodStatus.Changed]);
-            PrintMethodStatus("Added Methods: ", methodsWithStatus[MethodStatus.Added]);
-            PrintMethodStatus("Deleted Methods: ", methodsWithStatus[MethodStatus.Deleted]);
-        }
-
+        /// <summary>
+        /// prints the fully qualified name of the methods
+        /// </summary>
+        /// <param name="headLine">contains the headLine for the methods</param>
+        /// <param name="methods">contains the methods which should be printed</param>
         private static void PrintMethodStatus(
             string headLine,
             List<Method> methods)
