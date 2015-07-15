@@ -11,12 +11,14 @@ using MethodStatus = Tfs_Error_Location.MethodComparisonResult.MethodStatus;
 
 namespace Tfs_Error_Location
 {
-    public class Program
+    class Program
     {
         private const string s_ErrorWrongUsage =
             "Error: Wrong Usage.\r\n" + "Usage: no parameters | oldFileName newFileName";
 
         private const string s_OutputSeparator = "---------------------------------\r\n";
+
+        private const string s_ExecuteExamples = "The program is executed for example files.\r\n";
 
         private static void Main(string[] args)
         {
@@ -27,6 +29,7 @@ namespace Tfs_Error_Location
 
             if (args.Count() == 0)
             {
+                Console.WriteLine(s_ExecuteExamples);
                 //for now only with example files
                 oldFileName = "oldExampleFile.cs";
                 newFileName = "newExampleFile.cs";
@@ -38,17 +41,18 @@ namespace Tfs_Error_Location
                 newFileName = args[1];
                 oldFileContent = FileProvider.ReadFile(oldFileName);
                 newFileContent = FileProvider.ReadFile(newFileName);
-
-                if (oldFileContent == null ||
-                    newFileContent == null)
-                {
-                    //an error occured
-                    return;
-                }
             }
             else
             {
                 Console.WriteLine(s_ErrorWrongUsage);
+                return;
+            }
+
+            if (oldFileContent == null ||
+                newFileContent == null)
+            {
+                //an error occured
+                Console.WriteLine("An error occurred during the reading of a file.");
                 return;
             }
 

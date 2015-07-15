@@ -148,20 +148,20 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// retrieves all methodDeclarations from the given SyntaxTree.
-        /// for each methodDeclaration a Method object with its properties is created
+        /// retrieves all entityDeclarations (method, con/destruktor) from the given SyntaxTree.
+        /// for each entityDeclaration a Method object with its properties is created
         /// </summary>
         /// <param name="tree">the tree from which the methods should be retrieved</param>
         /// <returns>a list of all methods in a SyntaxTree</returns>
         private static IEnumerable<Method> GetAllMethodDeclarations(SyntaxTree tree)
         {
-            IEnumerable<MethodDeclaration> methodDeclarations =
-                tree.Descendants.OfType<MethodDeclaration>();
+            IEnumerable<EntityDeclaration> allMethods = GetAllEntityDeclarations(tree);
+
             List<Method> methods = new List<Method>();
 
-            foreach (MethodDeclaration methodDeclaration in methodDeclarations)
+            foreach (EntityDeclaration methodDeclaration in allMethods)
             {
-                //a method contains the methodDeclaration, the fully qualified method name
+                //a method contains the entityDeclaration, the fully qualified method name
                 //the method signature and a list of all changed astNodes
                 string fullName = GetFullyQualifiedMethodName(methodDeclaration);
                 string signature = GetMethodSignatureString(methodDeclaration);
@@ -177,12 +177,82 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
+        /// creates a list of all methods in the syntax tree 
+        /// (methods, constructors, destructors
+        /// </summary>
+        /// <param name="tree">the tree which should be analyzed</param>
+        /// <returns>a list of all methods in the syntax tree</returns>
+        private static IEnumerable<EntityDeclaration> GetAllEntityDeclarations(SyntaxTree tree)
+        {
+            IEnumerable<EntityDeclaration> methods = GetMethodDeclarations(tree);
+            IEnumerable<EntityDeclaration> constructors = GetConstructorDeclarations(tree);
+            IEnumerable<EntityDeclaration> destructors = GetDestructorDeclarations(tree);
+
+            IEnumerable<EntityDeclaration> allMethods = ConcatenateIEnumerable
+                (methods, constructors, destructors);
+
+            return allMethods;
+        }
+
+        /// <summary>
+        /// returns all descendants of type methodDeclaration in the syntaxtree
+        /// </summary>
+        /// <param name="tree">the syntaxtree which represents the code file</param>
+        /// <returns>an IEnumerable containing all MethodDeclarations in the tree</returns>
+        private static IEnumerable<EntityDeclaration> GetMethodDeclarations(SyntaxTree tree)
+        {
+            return (tree.Descendants.OfType<MethodDeclaration>());
+        }
+
+        /// <summary>
+        /// returns all parameterDeclarations for the given method
+        /// </summary>
+        /// <param name="method">the method which should be analyzed</param>
+        /// <returns>an IEnumerable containing all Parameters for a method</returns>
+        private static IEnumerable<ParameterDeclaration> GetParametersForMethod(
+            EntityDeclaration method)
+        {
+            return (method.Descendants.OfType<ParameterDeclaration>());
+        }
+
+        /// <summary>
+        /// returns all descendants of type ConstructorDeclaration in the syntaxtree
+        /// </summary>
+        /// <param name="tree">the syntaxtree which represents the code file</param>
+        /// <returns>an IEnumerable containing all Constructors in the tree</returns>
+        private static IEnumerable<EntityDeclaration> GetConstructorDeclarations(SyntaxTree tree)
+        {
+            return (tree.Descendants.OfType<ConstructorDeclaration>());
+        }
+
+        /// <summary>
+        /// returns all descendants of type DestructorDeclaration in the syntaxtree
+        /// </summary>
+        /// <param name="tree">the syntaxtree which represents the code file</param>
+        /// <returns>an IEnumerable containing all Destructors in the tree</returns>
+        private static IEnumerable<EntityDeclaration> GetDestructorDeclarations(SyntaxTree tree)
+        {
+            return (tree.Descendants.OfType<DestructorDeclaration>());
+        }
+
+        /// <summary>
+        /// concatenates multiple IEnumerables for a specific type
+        /// </summary>
+        /// <typeparam name="T">defines the type</typeparam>
+        /// <param name="lists">list of IEnumerables which should be concatenated</param>
+        /// <returns>a list containing all elements of the given parameters</returns>
+        private static IEnumerable<T> ConcatenateIEnumerable<T>(params IEnumerable<T>[] lists)
+        {
+            return lists.SelectMany(x => x);
+        }
+
+        /// <summary>
         /// creates the fully classified methodName of a method.
         /// (namespace.type1.type2.methodName)
         /// </summary>
         /// <param name="method">the method for which the name should be returned</param>
         /// <returns>the fully classified methodName</returns>
-        private static string GetFullyQualifiedMethodName(MethodDeclaration method)
+        private static string GetFullyQualifiedMethodName(EntityDeclaration method)
         {
             TypeDeclaration classType = method.GetParent<TypeDeclaration>();
             AstNode nextParent = classType.Parent;
@@ -444,8 +514,8 @@ namespace Tfs_Error_Location
         /// account while calculating the methodcomparison result</param>
         /// <returns>true if the methods have the same body, false otherwise</returns>
         private static AstNode CompareMethods(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod,
+            EntityDeclaration oldMethod,
+            EntityDeclaration newMethod,
             bool ignoreComments)
         {
             AstNode change;
@@ -604,11 +674,10 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="method">the method for which the signature should be created</param>
         /// <returns>a string of the method signature(modifers, returnValue, name)</returns>
-        private static string GetMethodSignatureString(MethodDeclaration method)
+        private static string GetMethodSignatureString(EntityDeclaration method)
         {
-            string signature = String.Empty;
-            signature += GetModifiersAsString(method.Modifiers) + method.ReturnType + " " +
-                         method.Name;
+            string signature = GetModifiersAsString(method.Modifiers) + " " + method.ReturnType +
+                               " " + method.Name;
 
             return signature;
         }
@@ -619,10 +688,10 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="method">the method for which the signature should be created</param>
         /// <returns>a string of the method signature(modifers, returnValue, name, (parameters))</returns>
-        private static string GetMethodSignatureWithParameters(MethodDeclaration method)
+        private static string GetMethodSignatureWithParameters(EntityDeclaration method)
         {
             string signature = String.Empty;
-            signature += GetModifiersAsString(method.Modifiers) + method.ReturnType + " " +
+            signature += GetModifiersAsString(method.Modifiers) + " " + method.ReturnType + " " +
                          method.Name + "(" + GetParametersAsStrings(method) + ")";
 
             return signature;
@@ -636,9 +705,9 @@ namespace Tfs_Error_Location
         /// be created</param>
         /// <returns>a string containing all parameters, an empty string
         /// if the method does not contain any parameters</returns>
-        private static string GetParametersAsStrings(MethodDeclaration method)
+        private static string GetParametersAsStrings(EntityDeclaration method)
         {
-            IEnumerable<ParameterDeclaration> parameters = method.Parameters;
+            IEnumerable<ParameterDeclaration> parameters = GetParametersForMethod(method);
             string parameterString = String.Empty;
 
             foreach (ParameterDeclaration parameter in parameters)

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Security.Policy;
 using System.Text;
 using System.Windows.Forms;
 using ICSharpCode.NRefactory;
@@ -19,158 +20,228 @@ namespace Gui_Demo
     /// </summary>
     internal class TextSelector
     {
+        /// <summary>
+        /// selects text in a textBox. the textbox in which the selection should 
+        /// be made depends on the selected node in the treeView.
+        /// </summary>
+        /// <param name="trView">the treeView from which the selection is triggered</param>
+        /// <param name="oldTextBox">contains the content of the old file</param>
+        /// <param name="newTextBox">contains the content of the new file</param>
         public static void SelectTextInTextBox(
-            TreeNode node,
+            TreeView trView,
             RichTextBox oldTextBox,
-            RichTextBox newTextBox,
-            MethodComparisonResult methodComparisonResult)
+            RichTextBox newTextBox)
         {
-            if (node == null ||
-                methodComparisonResult == null)
+            DeSelectAllTextBoxes(oldTextBox, newTextBox);
+
+            TreeNode node = trView.SelectedNode;
+
+            if (node == null)
             {
                 return;
             }
 
-            string newContent = newTextBox.Text;
-            string oldContent = oldTextBox.Text;
-
-            DeSelectAllTextBoxes(oldTextBox, newTextBox);
-
-            //in order to avoid that any text changes were also undone
-            newTextBox.Text = newContent;
-            oldTextBox.Text = oldContent;
-
             int nodeLevel = node.Level;
 
-            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> statusResult =
-                methodComparisonResult.GetMethodsForStatus();
-
-            switch (nodeLevel)
+            //nodelevel 0 = methodstatus
+            //nodelevel 1 = single method
+            //nodelevel 2 = change entry point node
+            try
             {
-                case 0:
-                    SelectAllMethodsForStatus(node, oldTextBox, newTextBox, statusResult);
-                    break;
-                case 1:
-                    SelectSingleMethod(node, oldTextBox, newTextBox, statusResult);
-                    break;
-                case 2:
-                    SelectChangeEntryNode(node, oldTextBox, newTextBox, statusResult);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        private static void SelectAllMethodsForStatus(
-            TreeNode node,
-            RichTextBox oldTextBox,
-            RichTextBox newTextBox,
-            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
-        {
-            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(node.Text);
-            RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
-
-            if (methodComparisonResult[methodStatus].Any())
-            {
-                foreach (Method method in methodComparisonResult[methodStatus])
+                switch (nodeLevel)
                 {
-                    SelectText(method.Signature, searchBox);
-                }
-
-                searchBox.ScrollToCaret();
-            }
-        }
-
-        private static void SelectSingleMethod(
-            TreeNode node,
-            RichTextBox oldTextBox,
-            RichTextBox newTextBox,
-            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
-        {
-            TreeNode parentNode = node.Parent;
-            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
-
-            RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
-
-            string methodName = node.Text;
-
-            Method method = methodComparisonResult[methodStatus].Find
-                (s => s.FullyQualifiedName.Equals(methodName));
-
-            SelectText(method.Signature, searchBox);
-            searchBox.ScrollToCaret();
-        }
-
-        private static void SelectSingleMethod2(
-            TreeNode node,
-            RichTextBox oldTextBox,
-            RichTextBox newTextBox,
-            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
-        {
-            TreeNode parentNode = node.Parent;
-            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
-
-            RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
-
-            string methodName = node.Text;
-
-            Method method = methodComparisonResult[methodStatus].Find
-                (s => s.FullyQualifiedName.Equals(methodName));
-
-            SelectText(method.Signature, searchBox);
-            searchBox.ScrollToCaret();
-        }
-
-
-        private static void SelectChangeEntryNode(
-            TreeNode node,
-            RichTextBox oldTextBox,
-            RichTextBox newTextBox,
-            Dictionary<MethodComparisonResult.MethodStatus, List<Method>> methodComparisonResult)
-        {
-            //methodstatus node
-            TreeNode parentNode = node.Parent.Parent;
-            MethodComparisonResult.MethodStatus methodStatus = ParseMethodStatus(parentNode.Text);
-            string methodName = node.Parent.Text;
-
-            RichTextBox searchBox = GetTextBoxToSearchIn(methodStatus, oldTextBox, newTextBox);
-
-            string[] lines = searchBox.Text.Split('\n');
-
-            Method method = methodComparisonResult[methodStatus].Find
-                (s => s.FullyQualifiedName.Equals(methodName));
-
-            if (method != null &&
-                method.ChangeNodes.Count > 0)
-            {
-                AstNode changedNode = method.ChangeNodes.First();
-                if (changedNode != null)
-                {
-                    TextLocation startLocation = changedNode.StartLocation;
-                    TextLocation endLocation = changedNode.EndLocation;
-                    int startLine = startLocation.Line;
-                    int startColumn = startLocation.Column;
-                    //int endLine = endLocation.Line;
-                    int endColumn = endLocation.Column;
-
-                    string textSoFar = "";
-                    for (int i = 0; i < startLine - 1; i++)
-                    {
-                        textSoFar += lines[i] + "\n";
-                    }
-                    int startIndex = textSoFar.Length + startColumn - 1;
-                    int selectionLength = endColumn - startColumn;
-
-                    SelectChangeEntryPoint(startIndex, selectionLength, searchBox);
+                    case 0:
+                        SelectAllMethodsForStatus(node, oldTextBox, newTextBox);
+                        break;
+                    case 1:
+                        SelectSingleMethod(node, oldTextBox, newTextBox);
+                        break;
+                    case 2:
+                        SelectChangeEntryNode(node, oldTextBox, newTextBox);
+                        break;
                 }
             }
+            catch (ArgumentException exception)
+            {
+                trView.Nodes.Clear();
+                TreeNode errorNode = new TreeNode
+                    (string.Format("An Error Occured: {0}", exception.Message));
+                trView.Nodes.Add(errorNode);
+            }
         }
 
-        private static RichTextBox GetTextBoxToSearchIn(
-            MethodComparisonResult.MethodStatus status,
+        /// <summary>
+        /// deselects the text in both textBoxes
+        /// </summary>
+        /// <param name="oldTextBox">contains the content of the old file</param>
+        /// <param name="newTextBox">contains the content of the new file</param>
+        public static void DeSelectAllTextBoxes(
             RichTextBox oldTextBox,
             RichTextBox newTextBox)
         {
+            newTextBox.SelectionBackColor = Color.White;
+            newTextBox.SelectAll();
+            oldTextBox.SelectionBackColor = Color.White;
+            oldTextBox.SelectAll();
+        }
+
+        /// <summary>
+        /// selects all methods for a givent method status in a textBox. the textbox 
+        /// in which the selection should be made depends on the method status.
+        /// </summary>
+        /// <param name="node">the selected treenode</param>
+        /// <param name="oldTextBox">contains the content of the old file</param>
+        /// <param name="newTextBox">contains the content of the new file</param>
+        private static void SelectAllMethodsForStatus(
+            TreeNode node,
+            RichTextBox oldTextBox,
+            RichTextBox newTextBox)
+        {
+            //get the textbox in which something should be highlighted
+            RichTextBox searchBox = GetTextBoxToSearchIn(node, oldTextBox, newTextBox);
+
+            List<Method> methods = (List<Method>)node.Tag;
+
+            foreach (Method method in methods)
+            {
+                SelectAstNode(searchBox, method.MethodDecl);
+            }
+        }
+
+        /// <summary>
+        /// selects a single method in a textBox. the textbox in which the selection
+        /// should be made depends on the corresponding method status.
+        /// </summary>
+        /// <param name="node">the selected treenode</param>
+        /// <param name="oldTextBox">contains the content of the old file</param>
+        /// <param name="newTextBox">contains the content of the new file</param>
+        private static void SelectSingleMethod(
+            TreeNode node,
+            RichTextBox oldTextBox,
+            RichTextBox newTextBox)
+        {
+            //get the textbox in which something should be highlighted
+            TreeNode statusNode = node.Parent;
+            RichTextBox searchBox = GetTextBoxToSearchIn(statusNode, oldTextBox, newTextBox);
+
+            Method method = (Method)node.Tag;
+
+            SelectAstNode(searchBox, method.MethodDecl);
+        }
+
+        /// <summary>
+        /// selects the change entry point of a method which was changed
+        /// </summary>
+        /// <param name="node">the selected treenode</param>
+        /// <param name="oldTextBox">contains the content of the old file</param>
+        /// <param name="newTextBox">contains the content of the new file</param>
+        private static void SelectChangeEntryNode(
+            TreeNode node,
+            RichTextBox oldTextBox,
+            RichTextBox newTextBox)
+        {
+            //get the textbox in which something should be highlighted
+            TreeNode statusNode = node.Parent.Parent;
+            RichTextBox searchBox = GetTextBoxToSearchIn(statusNode, oldTextBox, newTextBox);
+
+            AstNode changeEntryNode = (AstNode)node.Tag;
+            SelectAstNode(searchBox, changeEntryNode);
+        }
+
+        /// <summary>
+        /// selects the givent astNode in the searchBox
+        /// </summary>
+        /// <param name="searchBox">the textbox in which something should be highlighted</param>
+        /// <param name="astNode">the astNode which should be highlighted</param>
+        private static void SelectAstNode(
+            RichTextBox searchBox,
+            AstNode astNode)
+        {
+            string[] lines = GetLinesFromTextBox(searchBox);
+
+            //the methodDeclaration contains a TextLocation Property from
+            //which the exact positon int the textbox could be deduced
+            TextLocation startLocation = astNode.StartLocation;
+            int startLine = startLocation.Line;
+            int startColumn = startLocation.Column;
+
+            int startIndex = CalculateSelectionStart(lines, startLine, startColumn);
+            int selectionLength = lines[startLine - 1].Length - startColumn + 1;
+
+            SelectText(searchBox, startIndex, selectionLength);
+        }
+
+        /// <summary>
+        /// selects text in a textBox from startIndex to startIndex+selectionLength
+        /// </summary>
+        /// <param name="searchBox">the textBox in which something should be hightlighted</param>
+        /// <param name="startIndex">the startIndex for the selection</param>
+        /// <param name="selectionLength">the length of the selection</param>
+        private static void SelectText(
+            RichTextBox searchBox,
+            int startIndex,
+            int selectionLength)
+        {
+            searchBox.Select(startIndex, selectionLength);
+            searchBox.HideSelection = true;
+            searchBox.SelectionBackColor = Color.Yellow;
+            searchBox.ScrollToCaret();
+        }
+
+        /// <summary>
+        /// calculates where the highlighting in a textbox should start
+        /// </summary>
+        /// <param name="lines">the contents of the textbox</param>
+        /// <param name="startLine">the lineNumber where the hightlighting
+        /// should start</param>
+        /// <param name="startColumn">the startColumn where the hightlighting
+        /// should start</param>
+        /// <returns>the index in the textbox where the hightlighting
+        /// should start</returns>
+        private static int CalculateSelectionStart(
+            string[] lines,
+            int startLine,
+            int startColumn)
+        {
+            string textSoFar = "";
+
+            for (int i = 0; i < startLine - 1; i++)
+            {
+                textSoFar += lines[i] + "\n";
+            }
+            int startIndex = textSoFar.Length + startColumn - 1;
+
+            return startIndex;
+        }
+
+        /// <summary>
+        /// splits the content of a textbox in lines
+        /// </summary>
+        /// <param name="searchBox">the textbox from which the content should be splitted</param>
+        /// <returns>returns the content of a textbox splitted in lines</returns>
+        private static string[] GetLinesFromTextBox(RichTextBox searchBox)
+        {
+            return (searchBox.Text.Split('\n'));
+        }
+
+        /// <summary>
+        /// based on the method status the text selector decides in which textbox
+        /// the text should be highlighted. a deleted method can only be highlighted
+        /// in the oldTextBox, the other ones are highlighted in the newTextBox.
+        /// </summary>
+        /// <param name="statusNode">contains the node which refers to the method status</param>
+        /// <param name="oldTextBox">contains the content of the old file</param>
+        /// <param name="newTextBox">contains the content of the old file</param>
+        /// <returns>the TextBox in which something should be highlighted</returns>
+        private static RichTextBox GetTextBoxToSearchIn(
+            TreeNode statusNode,
+            RichTextBox oldTextBox,
+            RichTextBox newTextBox)
+        {
+            MethodComparisonResult.MethodStatus status =
+                (MethodComparisonResult.MethodStatus)
+                    Enum.Parse(typeof(MethodComparisonResult.MethodStatus), statusNode.Text);
+
             RichTextBox box;
             if (status == MethodComparisonResult.MethodStatus.Deleted)
             {
@@ -180,80 +251,8 @@ namespace Gui_Demo
             {
                 box = newTextBox;
             }
+
             return box;
-        }
-
-
-        private static MethodComparisonResult.MethodStatus ParseMethodStatus(string methodStatus)
-        {
-            MethodComparisonResult.MethodStatus status =
-                (MethodComparisonResult.MethodStatus)
-                    Enum.Parse(typeof(MethodComparisonResult.MethodStatus), methodStatus);
-
-            return status;
-        }
-
-        private static void SelectText(
-            string searchText,
-            RichTextBox searchBox)
-        {
-            int startIndex = FindMyText(searchBox, searchText, 0, searchBox.Text.Length);
-
-            // If string was found in the RichTextBox, highlight it
-            if (startIndex >= 0)
-            {
-                // Find the end index. End Index = number of characters in textbox
-                int selectionLength = searchText.Length;
-                // Highlight the search string
-                searchBox.SelectionBackColor = Color.Yellow;
-                searchBox.Select(startIndex, selectionLength);
-            }
-        }
-
-        private static int FindMyText(
-            RichTextBox searchBox,
-            string txtToSearch,
-            int searchStart,
-            int searchEnd)
-        {
-            int indexOfSearchText = -1;
-
-            if (searchStart >= 0)
-            {
-                // A valid ending index
-                if (searchEnd > searchStart ||
-                    searchEnd == -1)
-                {
-                    // Find the position of search string in RichTextBox
-                    indexOfSearchText = searchBox.Find
-                        (txtToSearch, searchStart, searchEnd, RichTextBoxFinds.None);
-                }
-            }
-
-            return indexOfSearchText;
-        }
-
-        private static void SelectChangeEntryPoint(
-            int startIndex,
-            int selectionLength,
-            RichTextBox searchBox)
-        {
-            //Select the text
-            searchBox.Select(startIndex, selectionLength);
-            searchBox.HideSelection = true;
-            searchBox.SelectionBackColor = Color.Yellow;
-            searchBox.ScrollToCaret();
-            searchBox.DeselectAll();
-        }
-
-        public static void DeSelectAllTextBoxes(
-            RichTextBox oldTextBox,
-            RichTextBox newTextBox)
-        {
-            newTextBox.DeselectAll();
-            newTextBox.Refresh();
-            oldTextBox.DeselectAll();
-            oldTextBox.Refresh();
         }
     }
 }

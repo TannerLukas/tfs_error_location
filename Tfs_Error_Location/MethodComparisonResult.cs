@@ -164,6 +164,7 @@ namespace Tfs_Error_Location
         /// list of all methods for that given status as values</returns>
         public Dictionary<MethodStatus, List<Method>> GetMethodsForStatus()
         {
+            //init the resulting dictionary
             Dictionary<MethodStatus, List<Method>> result =
                 new Dictionary<MethodStatus, List<Method>>
                 {
@@ -196,8 +197,6 @@ namespace Tfs_Error_Location
             {
                 Method method = keyValuePair.Key;
                 Dictionary<MethodStatus, int> statusCounter = keyValuePair.Value;
-                Console.WriteLine("--------------------");
-                Console.WriteLine("Method: " + method.MethodDecl.Name);
                 foreach (KeyValuePair<MethodStatus, int> valuePair in statusCounter)
                 {
                     MethodStatus status = valuePair.Key;
@@ -207,22 +206,47 @@ namespace Tfs_Error_Location
             }
         }
 
-        public void PrintResultOverviewToFile(StreamWriter writer)
+        public void PrintResultOverviewToFile(
+            StreamWriter writer,
+            int tableWidth,
+            string columnSeperator,
+            bool printAllMethods = false)
         {
+            //20 = changedCounter Column length
+            int methodPaddingValue = tableWidth - 20;
+
             foreach (KeyValuePair<Method, Dictionary<MethodStatus, int>> keyValuePair in Result)
             {
                 Method method = keyValuePair.Key;
                 Dictionary<MethodStatus, int> statusCounter = keyValuePair.Value;
 
                 int changedCounter = GetChangedCounter(statusCounter);
-                if (changedCounter > 0)
+
+                if (printAllMethods || changedCounter > 0)
                 {
-                    writer.WriteLine("--------------------");
-                    writer.WriteLine
-                        ("Method: " + method.MethodDecl.Name + "   ChangedCounter: " +
-                         changedCounter);
+                    string methodRow = CreateFileReportMethodRow
+                        (method.MethodDecl.Name, tableWidth, methodPaddingValue, columnSeperator,
+                            changedCounter);
+
+                    writer.WriteLine(methodRow);
                 }
             }
+
+        }
+
+        private string CreateFileReportMethodRow(
+            string name,
+            int tableWidth,
+            int paddingValue,
+            string columnSeperator,
+            int changedCounter)
+        {
+            string text = columnSeperator + "\t" + name.PadRight(paddingValue) + columnSeperator +
+                          new string(' ', 7) + changedCounter;
+
+            string newText = text.PadRight(tableWidth - 1) + columnSeperator;
+
+            return newText;
         }
 
         public void PrintCompleteResultToFile(StreamWriter writer)

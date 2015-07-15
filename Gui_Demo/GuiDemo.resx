@@ -127,19 +127,14 @@ namespace Tfs_Error_Location
 {
     class TestFile1
     {
-
+       public TestFile1()
+       {
+       }
+	
         public void Main(string[] args)
         {
             //TestComment
             Console.WriteLine("Hello, World");
-        }
-
-        public void TestMethod1()
-        {
-            if (5 &gt; 4)
-            {
-                int a = 6;
-            }
         }
 
         public Dictionary&lt;string, string&gt; Test2(string[] args)
@@ -157,13 +152,20 @@ namespace Tfs_Error_Location
             return null;
         }
 
+        public void Testing1()
+        {
+            if (5 &gt; 4)
+            {
+                //true
+                int a = 6;
+            }
+        }
         private static void TestMethod(int a)
         {
             a = 5;
         }
     }
 }
-
 </value>
   </data>
   <data name="txtNew.Text" xml:space="preserve">
@@ -176,18 +178,19 @@ namespace Tfs_Error_Location
 {
     class TestFile1
     {
-        public void Main(string[] args)
+        public TestFile1()
         {
-            Console.WriteLine("Hello, World");
         }
 
-        public void TestMethod1()
+        public void PrintString(string text)
         {
-            if (5 &gt; 4)
-            {
-                //true
-                int a = 6;
-            }
+            Console.WriteLine(text);
+        }
+		
+        public void Main(string[] args)
+        {
+			//Testing
+            Console.WriteLine("Hello, World");
         }
 
         public Dictionary&lt;string, string&gt; Test2(string[] args)
@@ -207,7 +210,6 @@ namespace Tfs_Error_Location
             test = "testing";
         }
     }
-}
-</value>
+}</value>
   </data>
 </root>

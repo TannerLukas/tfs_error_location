@@ -8,146 +8,315 @@ using Microsoft.TeamFoundation;
 using Microsoft.TeamFoundation.Build.Client;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.TeamFoundation.VersionControl.Client;
+using NDesk.Options;
 using Tfs_Error_Location;
 
 namespace TfsMethodChanges
 {
-    public class ConsoleSpiner
+    class Program
     {
-        // Volatile is used as hint to the compiler that this data 
-        // member will be accessed by multiple threads. 
-        private volatile bool m_ShouldStop;
-        int m_Counter;
-        public ConsoleSpiner()
+        private enum RequestType
         {
-            m_Counter = 0;
-            m_ShouldStop = false;
+            Changeset,
+            WorkItem,
+            Query
         }
 
-        public void Turn()
+        private enum ExitCode
         {
-            Console.Write("Working....");
-            while (!m_ShouldStop)
-            {
-                //|/-\
-                //"/-\\|
-                switch (m_Counter % 4)
-                {
-                    case 0: 
-                        Console.Write("|");
-                        m_Counter = 0;
-                        break;
-                    case 1: 
-                        Console.Write("/"); 
-                        break;
-                    case 2: Console.Write("-"); 
-                        break;
-                    case 3: Console.Write("\\");
-                        break;   
-                }
-                m_Counter++;
-                Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-                Thread.Sleep(120);
-            }
-            Console.Write("\r--------FINISHED--------");
+            Ok = 0,
+            NotOk = -1
         }
 
-        public void RequestStop()
-        {
-            m_ShouldStop = true;
-        }
+        private const int s_ReportTableWidth = 100;
+        private const string s_ColumnSeperator = "|";
 
-    }
-    
-    internal class Program
-    {
-        private const string s_TeamProjectCollectionUri =
-            "https://iiaastfs.ww004.siemens.net/tfs/TIA";
+        private const string s_ChangedColumn =
+            s_ColumnSeperator + " ChangedCounter " + s_ColumnSeperator;
 
-        private const string s_CodeFileSuffix = ".cs";
+        private static string s_ReportSeperator;
 
-        private static Dictionary<int, ServerItemInformation> m_ServerItems;
+        private const string s_DashedLine =
+            "---------------------------------------------";
 
-        private static VersionControlServer m_VcServer;
-        private static TfsTeamProjectCollection m_TfsTiaProject;
-        private static VersionControlArtifactProvider m_ArtifactProvider;
-        private static MemoryStream m_ErrorLogStream;
+        private static OptionSet s_OptionSet;
+        private static RequestType s_RequestType;
+        private static string s_RequestValue;
+        private static bool s_ShowLongReport;
+        private static bool s_NoConsoleReport;
+        private static string s_ReportFile;
+        private static StreamWriter s_FileReportWriter;
 
+        private static ConsoleSpinner s_Spinner;
+        private static Thread s_SpinnerThread;
 
+        private const bool s_ShowConsoleSpinner = true;
 
         private static void Main(string[] args)
         {
-            ConsoleSpiner spin = new ConsoleSpiner();
-            Thread workerThread = new Thread(spin.Turn);
-            workerThread.Start();
+            ParseOptions(args);
 
-            using (MemoryStream errorLogStream = new MemoryStream())
+            try
             {
-                TfsServiceProvider tfsService = new TfsServiceProvider(errorLogStream);
-                List<int> changeSets = new List<int> { 1417231, 1470300 };
-
-                string singleResultName = @"c:\temp\SingleComparison.txt";
-                string multipleResultName = @"c:\temp\MutlipleComparison.txt";
-
-                int selector = 2;
-                Dictionary<int, ServerItemInformation> result;
-
-                switch (selector)
+                if (s_ShowConsoleSpinner)
                 {
-                    case 0:
-                        int changesetNumber = 1470300;
-                        //int changesetNumber = 63403;
-                        result = tfsService.GetChangesetComparisonResult(changesetNumber);
-                        //CreateFileReport(result, singleResultName);
-                        CreateConsoleReport(result);
+                    StartSpinningThread();
+                }
+
+                Dictionary<int, ServerItemInformation> result = ExecuteRequest
+                    (s_RequestType, s_RequestValue);
+
+                CreateReport(result);
+
+                if (s_ShowConsoleSpinner)
+                {
+                    StopSpinningThread();
+                }
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine(exception);
+                Exit(ExitCode.NotOk);
+            }
+
+            Exit(ExitCode.Ok);
+        }
+
+        private static void StartSpinningThread()
+        {
+            s_Spinner = new ConsoleSpinner();
+            s_SpinnerThread = new Thread(s_Spinner.Turn);
+            s_SpinnerThread.Start();
+        }
+
+        private static void StopSpinningThread()
+        {
+            s_Spinner.RequestStop();
+
+            // Use the Join method to block the current thread  
+            // until the object's thread terminates.
+            s_SpinnerThread.Join();
+        }
+
+        private static Dictionary<int, ServerItemInformation> ExecuteRequest(
+            RequestType requestType,
+            string requestValue)
+        {
+            Dictionary<int, ServerItemInformation> result = null;
+
+            try
+            {
+                TfsServiceProvider tfsService = new TfsServiceProvider();
+
+                switch (requestType)
+                {
+                    case RequestType.Changeset:
+                        int changesetId = Convert.ToInt32(requestValue);
+                        result = tfsService.GetChangeSetInformationById(changesetId);
                         break;
-                    case 1:
-                        result = tfsService.GetResultForChangesets(changeSets);
-                        CreateFileReport(result, multipleResultName);
-                        break;
-                    case 2:
-                        //int workItemId = 1290403;
-                        int workItemId = 986699;
+                    case RequestType.WorkItem:
+                        int workItemId = Convert.ToInt32(requestValue);
                         result = tfsService.GetWorkItemInformations(workItemId);
-                        CreateFileReport(result, multipleResultName);
+                        break;
+                    case RequestType.Query:
+                        //no need for conversion
+                        //TODO: process a query
                         break;
                 }
 
-                spin.RequestStop();
+                tfsService.PrintErrorReport();
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine(exception);
+                Exit(ExitCode.NotOk);
+            }
 
-                // Use the Join method to block the current thread  
-                // until the object's thread terminates.
-                workerThread.Join();
-            }           
+            return result;
         }
 
-        private static void CreateFileReport(
-            Dictionary<int, ServerItemInformation> result,
-            string fileName)
+        private static void ParseOptions(IEnumerable<string> args)
         {
-            StreamWriter writer = new StreamWriter(fileName, true) {AutoFlush = true};
+            string changesetId = null;
+            string workItemId = null;
+            string queryId = null;
 
-            foreach (KeyValuePair<int, ServerItemInformation> serverItemInformation in result)
+            s_OptionSet = new OptionSet
             {
-                ServerItemInformation information = serverItemInformation.Value;
-                writer.WriteLine
-                    ("SERVERITEM: " + information.FileName + " --------------------------");
-                information.AggregatedResult.PrintResultOverviewToFile(writer);
-                writer.WriteLine();
+                {"h|?|help", "Show this help message.", v => ShowHelp(0)},
+                {
+                    "changeset|c=", "RequestOption with {CHANGESETID} for MethodComparison.",
+                    v => changesetId = v
+                },
+                {
+                    "workitem|w=", "RequestOption with  {WORKITEMID} for MethodComparison.",
+                    v => workItemId = v
+                },
+                {
+                    "query|q=", "RequestOption with  {QUERYID} for MethodComparison.", v => queryId = v
+                },
+                {
+                    "outputfile=|file=", "Stores the report in {FILE}. Default directory= /bin/debug/",
+                    v => s_ReportFile = v
+                },
+                {
+                    "noconsole|noc", "Show no report on the console. Default=False",
+                    v => s_NoConsoleReport = v != null
+                },
+                {
+                    "long|l", "Prints a long version of the report. Default=short version.",
+                    v => s_ShowLongReport = v != null
+                }
+            };
+
+            try
+            {
+                List<string> extras = s_OptionSet.Parse(args);
+
+                if (extras.Any())
+                {
+                    Console.WriteLine("Unknown parameters.");
+                    ShowHelp(ExitCode.NotOk);
+                }
+            }
+            catch (OptionException e)
+            {
+                HandleException(e);
+            }
+
+            Dictionary<RequestType, string> request = new Dictionary<RequestType, string>
+            {
+                {RequestType.Changeset, changesetId},
+                {RequestType.WorkItem, workItemId},
+                {RequestType.Query, queryId}
+            };
+
+            //get all requests where a corresponding request value was set
+            var requestValues = request.Where(r => r.Value != null).ToList();
+
+            if (requestValues.Count() > 1 ||
+                !requestValues.Any())
+            {
+                //wrong amount of command line parameters.
+                Console.WriteLine("A single request Option should be used.");
+                ShowHelp(ExitCode.NotOk);
+            }
+
+            if (s_ReportFile != null)
+            {
+                InitFileReportWriter(s_ReportFile);
+            }
+
+            //if this point is reached, the parsing of the commandline options
+            //was successful. Therefore, requestvalue consists of exactly one value. 
+            s_RequestType = requestValues.First().Key;
+            s_RequestValue = requestValues.First().Value;
+        }
+
+        private static void HandleException(Exception exception)
+        {
+            Console.WriteLine(exception.Message);
+            Exit(ExitCode.NotOk);
+        }
+
+        private static void InitFileReportWriter(string fileName)
+        {
+            try
+            {
+                s_FileReportWriter = new StreamWriter(fileName, false) {AutoFlush = true};
+            }
+            catch (IOException e)
+            {
+                HandleException(e);
+            }
+            catch (ArgumentException e)
+            {
+                HandleException(e);
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                HandleException(e);
             }
         }
 
-        private static void CreateConsoleReport(
-            Dictionary<int, ServerItemInformation> result)
+        private static void ShowHelp(ExitCode exitCode)
+        {
+            Console.WriteLine("Command line options:");
+            s_OptionSet.WriteOptionDescriptions(Console.Out);
+
+            Exit(exitCode);
+        }
+
+        private static void Exit(ExitCode exitCode)
+        {
+            Environment.Exit((int)exitCode);
+        }
+
+        private static void CreateReport(Dictionary<int, ServerItemInformation> result)
+        {
+            if (!s_NoConsoleReport)
+            {
+                CreateConsoleReport(result);
+            }
+
+            if (s_FileReportWriter != null)
+            {
+                CreateFileReport(result);
+            }
+        }
+
+        private static void CreateFileReport(Dictionary<int, ServerItemInformation> result)
+        {
+            //create the needed headers/seperators
+            s_ReportSeperator = CreateFileReportSeperator(s_ReportTableWidth);
+            string methodHeader = CreateFileReportMethodHeader();
+
+            foreach (KeyValuePair<int, ServerItemInformation> serverItemInformation in result)
+            {
+                //print serveritem row
+                s_FileReportWriter.WriteLine(s_ReportSeperator);
+                ServerItemInformation information = serverItemInformation.Value;
+                string text = s_ColumnSeperator + " \t SERVERITEM: " + information.FileName;
+                s_FileReportWriter.Write(text.PadRight(s_ReportTableWidth));
+                s_FileReportWriter.WriteLine(s_ColumnSeperator);
+                s_FileReportWriter.WriteLine(s_ReportSeperator);
+
+                //print methodheader row
+                s_FileReportWriter.WriteLine(methodHeader);
+                s_FileReportWriter.WriteLine(s_ReportSeperator);
+
+                //print the the methods with their counters
+                information.AggregatedResult.PrintResultOverviewToFile
+                    (s_FileReportWriter, s_ReportTableWidth, s_ColumnSeperator, true);
+
+                s_FileReportWriter.WriteLine(s_ReportSeperator);
+                s_FileReportWriter.WriteLine();
+            }
+        }
+
+        private static void CreateConsoleReport(Dictionary<int, ServerItemInformation> result)
         {
             foreach (KeyValuePair<int, ServerItemInformation> serverItemInformation in result)
             {
+                Console.WriteLine(s_DashedLine);
                 ServerItemInformation information = serverItemInformation.Value;
-                Console.WriteLine
-                    ("SERVERITEM: " + information.FileName + " --------------------------");
+                Console.WriteLine("| SERVERITEM: " + information.FileName);
                 information.AggregatedResult.PrintCompleteResultToConsole();
                 Console.WriteLine();
             }
+        }
+
+        private static string CreateFileReportMethodHeader()
+        {
+            string methodHeader = s_ColumnSeperator +
+                                  "\tMETHOD".PadRight(s_ReportTableWidth - s_ChangedColumn.Length - 1) +
+                                  s_ChangedColumn;
+            return methodHeader;
+        }
+
+        private static string CreateFileReportSeperator(int length)
+        {
+            return (" " + new string('-', length));
         }
     }
 }

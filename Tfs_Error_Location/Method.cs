@@ -11,9 +11,8 @@ namespace Tfs_Error_Location
     /// </summary>
     public class Method
     {
-
         public Method(
-            MethodDeclaration methodDecl,
+            EntityDeclaration methodDecl,
             List<AstNode> changeNodes,
             string fullName,
             string signature,
@@ -27,9 +26,9 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// contains the MethodDeclaration itself
+        /// contains the EntityDeclaration itself
         /// </summary>
-        public MethodDeclaration MethodDecl
+        public EntityDeclaration MethodDecl
         {
             get;
             private set;

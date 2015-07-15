@@ -7,7 +7,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
-using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
 using Tfs_Error_Location;
 
@@ -15,51 +14,49 @@ namespace Gui_Demo
 {
     public partial class GuiDemo : Form
     {
-        private MethodComparisonResult m_MethodComparisonResult;
 
         public GuiDemo()
         {
             InitializeComponent();
         }
 
-        private void OnCompareClick(
-            object sender,
-            EventArgs e)
+        private void OnCompareClick(object sender, EventArgs e)
         {
             string oldText = txtOld.Text;
             string newText = txtNew.Text;
 
             trView.Nodes.Clear();
+            TextSelector.DeSelectAllTextBoxes(txtOld, txtNew);
+
+            txtOld.ScrollToCaret();
+            txtNew.ScrollToCaret();
 
             MemoryStream errorLogStream = new MemoryStream();
 
-            m_MethodComparisonResult = AstComparer.CompareSyntaxTrees
+            MethodComparisonResult methodComparisonResult = AstComparer.CompareSyntaxTrees
                 (oldText, "oldExampleFile.cs", newText, "newExampleFile.cs", errorLogStream);
 
-            if (m_MethodComparisonResult == null)
+            if (methodComparisonResult == null)
             {
+                //for now the treeView is disabled if an error occurs in the AstComparer
                 TreeNode node = new TreeNode("Errors occured during parsing");
                 trView.Nodes.Add(node);
-                TextSelector.DeSelectAllTextBoxes(txtOld, txtNew);
-                txtOld.Text = oldText;
-                txtNew.Text = txtNew.Text;
-                txtNew.SelectionLength = 0;
-                txtNew.SelectionStart = 0;
-                txtNew.Select();
                 trView.Enabled = false;
                 return;
             }
 
             trView.Enabled = true;
-            CreateOutput(m_MethodComparisonResult);
+            CreateTreeViewOutput(methodComparisonResult);
         }
 
-        private void CreateOutput(
-            MethodComparisonResult methodComparisonResult)
+        private void CreateTreeViewOutput(MethodComparisonResult methodComparisonResult)
         {
+            //for each method status: get the list of methods which belong to that status
             Dictionary<MethodComparisonResult.MethodStatus, List<Method>> statusResult =
                 methodComparisonResult.GetMethodsForStatus();
 
+            //for each status add a treeNode, for each method of that status 
+            //add a childTreeNode
             foreach (MethodComparisonResult.MethodStatus methodStatus in statusResult.Keys)
             {
                 List<TreeNode> treeNodes = new List<TreeNode>();
@@ -69,28 +66,30 @@ namespace Gui_Demo
 
                     foreach (AstNode changeNode in method.ChangeNodes)
                     {
-                        changedNodes.Add(new TreeNode("Change Entry Point"));
+                        changedNodes.Add(new TreeNode("Change Entry Point") { Tag = changeNode });
                     }
 
-                    TreeNode node = new TreeNode(method.FullyQualifiedName, changedNodes.ToArray());
+                    TreeNode node = new TreeNode(method.FullyQualifiedName, changedNodes.ToArray())
+                    {
+                        Tag = method
+                    };
+
                     treeNodes.Add(node);
                 }
+
                 TreeNode methodStatusNode = new TreeNode
-                    (methodStatus.ToString(), treeNodes.ToArray());
+                    (methodStatus.ToString(), treeNodes.ToArray())
+                {
+                    Tag = statusResult[methodStatus]
+                };
+
                 trView.Nodes.Add(methodStatusNode);
             }
         }
 
-        private void OnNodeClick(
-            object sender,
-            TreeNodeMouseClickEventArgs e)
+        private void OnNodeDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
         {
-            TreeNode node = trView.SelectedNode;
-            if (node != null)
-            {
-                TextSelector.SelectTextInTextBox(node, txtOld, txtNew, m_MethodComparisonResult);
-            }
+            TextSelector.SelectTextInTextBox(trView, txtOld, txtNew);
         }
-
     }
 }

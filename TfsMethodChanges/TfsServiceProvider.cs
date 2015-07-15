@@ -23,15 +23,25 @@ namespace TfsMethodChanges
         private TfsTeamProjectCollection m_TfsTiaProject;
         private VersionControlArtifactProvider m_ArtifactProvider;
         private MemoryStream m_ErrorLogStream;
+        private StreamWriter m_ErrorLogWriter;
 
-        public TfsServiceProvider(MemoryStream errorLogStream)
+        public TfsServiceProvider()
         {
             m_ServerItems = new Dictionary<int, ServerItemInformation>();
             m_TfsTiaProject = TfsTeamProjectCollectionFactory.GetTeamProjectCollection
                 (new Uri(s_TeamProjectCollectionUri));
             m_VcServer = m_TfsTiaProject.GetService<VersionControlServer>();
             m_ArtifactProvider = m_VcServer.ArtifactProvider;
-            m_ErrorLogStream = errorLogStream;
+            m_ErrorLogStream = new MemoryStream();
+            m_ErrorLogWriter = new StreamWriter(m_ErrorLogStream) {AutoFlush = true};
+        }
+
+        public Dictionary<int, ServerItemInformation> GetChangeSetInformationById(int changesetId)
+        {
+            // Get the changeset for a given Changeset Number
+            Changeset changeset = m_VcServer.GetChangeset(changesetId);
+            ProcessChangesOfChangeset(changesetId, changeset.Changes);
+            return m_ServerItems;
         }
 
         public Dictionary<int, ServerItemInformation> GetWorkItemInformations(int workItemId)
@@ -39,15 +49,24 @@ namespace TfsMethodChanges
             WorkItemStore workItemStore = m_TfsTiaProject.GetService<WorkItemStore>();
             WorkItem workItem = workItemStore.GetWorkItem(workItemId);
 
-            IEnumerable<Changeset> linkedChangesets = workItem.Links.OfType<ExternalLink>()
-                .Select(link => m_ArtifactProvider.GetChangeset(new Uri(link.LinkedArtifactUri)));
-
-            foreach (Changeset changeset in linkedChangesets)
+            try
             {
-                GetChangeSetInformationByChangeset(changeset);
+                IEnumerable<Changeset> linkedChangesets = workItem.Links.OfType<ExternalLink>()
+                    .Select(link => m_ArtifactProvider.GetChangeset(new Uri(link.LinkedArtifactUri)));
+
+                foreach (Changeset changeset in linkedChangesets)
+                {
+                    GetChangeSetInformationByChangeset(changeset);
+                }
+
+                return m_ServerItems;
+            }
+            catch (UriFormatException exception)
+            {
+                m_ErrorLogWriter.WriteLine(exception.Message);               
             }
 
-            return m_ServerItems;
+            return null;
         }
 
         public Dictionary<int, ServerItemInformation> GetResultForChangesets(
@@ -61,23 +80,19 @@ namespace TfsMethodChanges
             return m_ServerItems;
         }
 
-        public Dictionary<int, ServerItemInformation> GetChangesetComparisonResult(
-            int changesetNumber)
+        public void PrintErrorReport()
         {
-            GetChangeSetInformationById(changesetNumber);
-            return m_ServerItems;
+            using (StreamReader reader = new StreamReader(m_ErrorLogStream))
+            {
+                m_ErrorLogStream.Position = 0;
+                string errors = reader.ReadToEnd();
+                Console.WriteLine(errors);
+            }
         }
 
         private void GetChangeSetInformationByChangeset(Changeset changeset)
         {
             int changesetId = changeset.ChangesetId;
-            ProcessChangesOfChangeset(changesetId, changeset.Changes);
-        }
-
-        private void GetChangeSetInformationById(int changesetId)
-        {
-            // Get the changeset for a given Changeset Number
-            Changeset changeset = m_VcServer.GetChangeset(changesetId);
             ProcessChangesOfChangeset(changesetId, changeset.Changes);
         }
 
@@ -95,17 +110,19 @@ namespace TfsMethodChanges
 
                 int itemId = change.Item.ItemId;
 
-                Item currentItem = m_VcServer.GetItem(itemId, changesetId, GetItemsOptions.Download);
+                Item currentItem = GetServerItem(itemId, changesetId);
 
                 if (currentItem == null)
                 {
+                    m_ErrorLogWriter.WriteLine("Error: File: {0} was not found.", itemId);
                     continue;
                 }
 
-                //The  GetItem() Method returns null if no object is found.
-                Item previousItem = m_VcServer.GetItem
-                    (itemId, changesetId - 1, GetItemsOptions.Download);
+                Item previousItem = GetServerItem(itemId, changesetId - 1);
 
+                //If no previous item is found, it is assumed that the currentItem was added in 
+                //this changeset. The content of the previous item will be declared with an empty
+                //string. The AstComparer will then mark all methods as added.
                 string oldFileContent = String.Empty;
 
                 if (previousItem != null)
@@ -115,38 +132,46 @@ namespace TfsMethodChanges
 
                 string newFileContent = GetFileString(currentItem);
 
-                ServerItemInformation information;
+                ServerItemInformation serverItem = GetOrCreateServerItemInformation
+                    (itemId, serverItemPath);
 
-                if (m_ServerItems.ContainsKey(itemId))
-                {
-                    //merge
-                    information = m_ServerItems[itemId];
+                MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
+                    (oldFileContent, serverItem.FileName, newFileContent, serverItem.FileName,
+                        m_ErrorLogStream);
 
-                    MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
-                        (oldFileContent, information.FileName, newFileContent, information.FileName,
-                            m_ErrorLogStream);
+                if (methodComparison == null)
+                    return;
 
-                    information.AddChangesetResult(changesetId, methodComparison);
-                }
-                else
-                {
-                    //create new item
-                    information = new ServerItemInformation(serverItemPath);
-
-                    MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
-                        (oldFileContent, information.FileName, newFileContent, information.FileName,
-                            m_ErrorLogStream);
-
-                    information.AddChangesetResult(changesetId, methodComparison);
-                    m_ServerItems.Add(itemId, information);
-                }
+                serverItem.AddChangesetResult(changesetId, methodComparison);
             }
         }
 
-        public string GetFileString(Item item)
+        private ServerItemInformation GetOrCreateServerItemInformation(
+            int itemId,
+            string serverItemPath)
+        {
+            ServerItemInformation serverItem;
+
+            if (!m_ServerItems.TryGetValue(itemId, out serverItem))
+            {
+                serverItem = new ServerItemInformation(serverItemPath);
+                m_ServerItems.Add(itemId, serverItem);
+            }
+
+            return serverItem;
+        }
+
+        private Item GetServerItem(
+            int itemId,
+            int changesetId)
+        {
+            return m_VcServer.GetItem(itemId, changesetId, GetItemsOptions.Download);
+        }
+
+        private string GetFileString(Item item)
         {
             // Setup string container
-            string content = string.Empty;
+            string content;
 
             // Download file into stream
             using (Stream stream = item.DownloadFile())
@@ -169,5 +194,6 @@ namespace TfsMethodChanges
             // return string
             return content;
         }
+
     }
 }

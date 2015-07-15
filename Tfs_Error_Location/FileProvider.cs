@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Tfs_Error_Location
 {
-    internal class FileProvider
+    class FileProvider
     {
         /// <summary>
         /// reads the contents of a file into a string.
