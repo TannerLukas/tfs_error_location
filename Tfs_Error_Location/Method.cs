@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
 
 namespace Tfs_Error_Location
@@ -13,12 +14,14 @@ namespace Tfs_Error_Location
     {
         public Method(
             EntityDeclaration methodDecl,
+            TextLocation startLocation,
             List<AstNode> changeNodes,
             string fullName,
             string signature,
             string completeSignature)
         {
             MethodDecl = methodDecl;
+            StartLocation = startLocation;
             ChangeNodes = changeNodes;
             FullyQualifiedName = fullName;
             Signature = signature;
@@ -70,6 +73,16 @@ namespace Tfs_Error_Location
         /// e.g public static void Main (string[] args)
         /// </summary>
         public string SignatureWithParameters
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// defines the position where the method declaration starts.
+        /// all summary comments are ignored.
+        /// </summary>
+        public TextLocation StartLocation
         {
             get;
             private set;

@@ -4,12 +4,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Mono.CSharp;
+
 
 namespace Tfs_Error_Location
 {
     /// <summary>
-    /// contains the result from the method comparison of the AstComparer.
+    /// contains the result for the method comparison of the AstComparer.
     /// </summary>
     public class MethodComparisonResult
     {
@@ -191,30 +191,20 @@ namespace Tfs_Error_Location
             return result;
         }
 
-        public void PrintCompleteResultToConsole()
-        {
-            foreach (KeyValuePair<Method, Dictionary<MethodStatus, int>> keyValuePair in Result)
-            {
-                Method method = keyValuePair.Key;
-                Dictionary<MethodStatus, int> statusCounter = keyValuePair.Value;
-                foreach (KeyValuePair<MethodStatus, int> valuePair in statusCounter)
-                {
-                    MethodStatus status = valuePair.Key;
-                    int counter = valuePair.Value;
-                    Console.WriteLine("Status: " + status + " Counter: " + counter);
-                }
-            }
-        }
-
+        /// <summary>
+        /// prints a result overview of the methods to a file
+        /// </summary>
+        /// <param name="writer">Writer used to write the contents to the file</param>
+        /// <param name="tableWidth">specifies the width of the output table in the file</param>
+        /// <param name="columnSeperator">contains a string which is used to seperate the columns</param>
+        /// <param name="printAllMethods">a flag which indicates of all methods should be
+        /// printed or only the methods where somehow changed(added/deleted/changed)</param>
         public void PrintResultOverviewToFile(
             StreamWriter writer,
             int tableWidth,
             string columnSeperator,
             bool printAllMethods = false)
-        {
-            //20 = changedCounter Column length
-            int methodPaddingValue = tableWidth - 20;
-
+        {   
             foreach (KeyValuePair<Method, Dictionary<MethodStatus, int>> keyValuePair in Result)
             {
                 Method method = keyValuePair.Key;
@@ -225,28 +215,13 @@ namespace Tfs_Error_Location
                 if (printAllMethods || changedCounter > 0)
                 {
                     string methodRow = CreateFileReportMethodRow
-                        (method.MethodDecl.Name, tableWidth, methodPaddingValue, columnSeperator,
+                        (method.MethodDecl.Name, tableWidth, columnSeperator,
                             changedCounter);
 
                     writer.WriteLine(methodRow);
                 }
             }
 
-        }
-
-        private string CreateFileReportMethodRow(
-            string name,
-            int tableWidth,
-            int paddingValue,
-            string columnSeperator,
-            int changedCounter)
-        {
-            string text = columnSeperator + "\t" + name.PadRight(paddingValue) + columnSeperator +
-                          new string(' ', 7) + changedCounter;
-
-            string newText = text.PadRight(tableWidth - 1) + columnSeperator;
-
-            return newText;
         }
 
         public void PrintCompleteResultToFile(StreamWriter writer)
@@ -273,7 +248,7 @@ namespace Tfs_Error_Location
         private void InitMethodInResult(Method method)
         {
             Result.Add(method, new Dictionary<MethodStatus, int>());
-            foreach (MethodStatus status in System.Enum.GetValues(typeof(MethodStatus)))
+            foreach (MethodStatus status in Enum.GetValues(typeof(MethodStatus)))
             {
                 Result[method].Add(status, 0);
             }
@@ -292,7 +267,14 @@ namespace Tfs_Error_Location
             return matchingMethod;
         }
 
-        private int GetChangedCounter(Dictionary<MethodStatus, int> statusCounter)
+        /// <summary>
+        /// calculates the final changes counter of a method. Therefore
+        /// all counters where the method status != NotChanged are added.
+        /// </summary>
+        /// <param name="statusCounter">foreach method status it contains a counter
+        /// which indicates how often this state was reached.</param>
+        /// <returns>the final amount of how often the methods was changed.</returns>
+        private static int GetChangedCounter(Dictionary<MethodStatus, int> statusCounter)
         {
             int counter = 0;
             foreach (KeyValuePair<MethodStatus, int> statusPair in statusCounter)
@@ -305,6 +287,32 @@ namespace Tfs_Error_Location
             }
 
             return counter;
+        }
+
+        /// <summary>
+        /// create a row in the file report for a method
+        /// </summary>
+        /// <param name="name">the name of the methods</param>
+        /// <param name="tableWidth"></param>
+        /// <param name="columnSeperator"></param>
+        /// <param name="changedCounter"></param>
+        /// <returns>a string containing the whole content of a
+        /// method (name/changedcounter) in the output table</returns>
+        private static string CreateFileReportMethodRow(
+            string name,
+            int tableWidth,
+            string columnSeperator,
+            int changedCounter)
+        {
+            //20 = changedCounter Column length
+            int methodPaddingValue = tableWidth - 20;
+
+            string text = columnSeperator + "\t" + name.PadRight(methodPaddingValue) + columnSeperator +
+                          new string(' ', 7) + changedCounter;
+
+            string newText = text.PadRight(tableWidth - 1) + columnSeperator;
+
+            return newText;
         }
     }
 }

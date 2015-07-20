@@ -2,11 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Windows.Forms;
-using ICSharpCode.NRefactory.CSharp;
-using ICSharpCode.NRefactory.Semantics;
-using ICSharpCode.NRefactory.TypeSystem;
 using MethodStatus = Tfs_Error_Location.MethodComparisonResult.MethodStatus;
 
 namespace Tfs_Error_Location

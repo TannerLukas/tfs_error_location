@@ -41,7 +41,6 @@ namespace TfsMethodChanges
                 Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
                 Thread.Sleep(120);
             }
-            Console.Write("\r--------FINISHED--------");
         }
 
         public void RequestStop()

@@ -2,14 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.TypeSystem;
-using Mono.Cecil;
-using Mono.CSharp;
 using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
 using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
 using ParameterModifier = ICSharpCode.NRefactory.CSharp.ParameterModifier;
@@ -32,21 +28,26 @@ namespace Tfs_Error_Location
             Deleted
         }
 
-        private const string s_CommentString = "Comment";
+        private const string s_Comment = "Comment";
+        private const string s_NewLine = "NewLine";
 
         /// <summary>
         /// Compares two syntax trees:
-        /// 1) get all methodDeclarations of the trees
-        /// 2) creates a methodMapping in order to know which methods should be compared
-        /// 3) compares the methods where a matching method was found
-        /// 4) if no match was found then the method was either added or deleted
+        /// 1) Creates SyntaxTrees for the given file contents.
+        /// 2) get all methodDeclarations of the trees
+        /// 3) creates a methodMapping in order to know which methods should be compared
+        /// 4) compares the methods where a matching method was found
+        /// 5) if no match was found then the method was either added or deleted
         /// </summary>
         /// <param name="oldFileContent">the content of the old file</param>
         /// <param name="oldFileName">the fileName of the old file</param>
         /// <param name="newFileContent">the content of the new file</param>
         /// <param name="newFileName">the fileName of the new file</param>
         /// <param name="errorLogStream">is the stream to which the errors should be written</param>
-        /// <param name="ignoreComments">A flag which indicates if changes to comments 
+        /// <param name="abortOnParsingError">a flag which indicates if the programm 
+        /// should continue with the method comparison if any parsing errors are 
+        /// found for the syntaxTrees or abort.</param>
+        /// <param name="ignoreComments">a flag which indicates if changes to comments 
         /// should also be taken into account when changes of a method are calculated.
         /// If it is true, all comments are ignored.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
@@ -57,6 +58,7 @@ namespace Tfs_Error_Location
             string newFileContent,
             string newFileName,
             MemoryStream errorLogStream,
+            bool abortOnParsingError = true,
             bool ignoreComments = true)
         {
             //retrieve the syntaxTrees for the old and the new file
@@ -65,8 +67,8 @@ namespace Tfs_Error_Location
 
             StreamWriter errorLogWriter = new StreamWriter(errorLogStream);
 
-            if (CheckSyntaxTreeErrors(oldTree, errorLogWriter) == false ||
-                CheckSyntaxTreeErrors(newTree, errorLogWriter) == false)
+            //if any parsing errors occured && abortOnParsingError==true -> abort
+            if (!CheckSyntaxTrees(oldTree, newTree, errorLogWriter) && abortOnParsingError)
             {
                 return null;
             }
@@ -108,8 +110,8 @@ namespace Tfs_Error_Location
         {
             string methodName = oldMethod.FullyQualifiedName;
 
-            IEnumerable<Method> possibleMethods = newMethods.Where
-                (m => m.FullyQualifiedName.Equals(methodName));
+            List<Method> possibleMethods =
+                newMethods.Where(m => m.FullyQualifiedName.Equals(methodName)).ToList();
 
             if (possibleMethods.Count() == 1)
             {
@@ -121,8 +123,9 @@ namespace Tfs_Error_Location
                 //compare the complete Signature (and parameters)
                 string methodSignature = oldMethod.SignatureWithParameters;
 
-                IEnumerable<Method> signatureMethods = possibleMethods.Where
-                    (m => m.SignatureWithParameters.Equals(methodSignature));
+                List<Method> signatureMethods =
+                    possibleMethods.Where(m => m.SignatureWithParameters.Equals(methodSignature))
+                        .ToList();
 
                 if (signatureMethods.Count() == 1)
                 {
@@ -144,6 +147,7 @@ namespace Tfs_Error_Location
             string fileName)
         {
             SyntaxTree tree = new CSharpParser().Parse(code, fileName);
+
             return tree;
         }
 
@@ -169,8 +173,8 @@ namespace Tfs_Error_Location
 
                 methods.Add
                     (new Method
-                        (methodDeclaration, new List<AstNode>(), fullName, signature,
-                            signatureWithParameters));
+                        (methodDeclaration, FindStartLocation(methodDeclaration),
+                            new List<AstNode>(), fullName, signature, signatureWithParameters));
             }
 
             return methods;
@@ -268,7 +272,7 @@ namespace Tfs_Error_Location
                 {
                     fullClassName = ((TypeDeclaration)nextParent).Name + "." + fullClassName;
                 }
-                else
+                else if (nextParent.GetType() == typeof(NamespaceDeclaration))
                 {
                     //reached the namespace declaration
                     fullClassName = ((NamespaceDeclaration)nextParent).Name + "." + fullClassName;
@@ -368,13 +372,11 @@ namespace Tfs_Error_Location
             {
                 Method oldMethod = pair.Key;
                 Method newMethod = pair.Value;
-                /*
-                CompareMethodModifiers(oldMethod, newMethod) &&
-                CompareReturnValueType(oldMethod, newMethod) &&
-                CompareParameters(oldMethod, newMethod)
-                 * */
-                AstNode changeNode = CompareMethods
-                    (oldMethod.MethodDecl, newMethod.MethodDecl, ignoreComments);
+
+                //traverses through the methods children and compares them
+                //if a change is found, the current astNode is returned
+                AstNode changeNode = TraverseAstNodes
+                    (oldMethod.MethodDecl.Children, newMethod.MethodDecl.Children, ignoreComments);
 
                 if (changeNode != null)
                 {
@@ -505,36 +507,6 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// 1) retrieves all childnodes from the method
-        /// 2) traverses through their children and compares them
-        /// </summary>
-        /// <param name="oldMethod">contains the old MethodDeclaration</param>
-        /// <param name="newMethod">contains the new MethodDeclaration</param>
-        /// <param name="ignoreComments">indicates if comments should be taken into
-        /// account while calculating the methodcomparison result</param>
-        /// <returns>true if the methods have the same body, false otherwise</returns>
-        private static AstNode CompareMethods(
-            EntityDeclaration oldMethod,
-            EntityDeclaration newMethod,
-            bool ignoreComments)
-        {
-            AstNode change;
-
-            //Comments are ignored if s_IgnoreComments == true
-            //otherwise, comment changes indicate that the method has changed.
-            if (ignoreComments)
-            {
-                change = TraverseMethodBodyIgnoringComments(oldMethod.Children, newMethod.Children);
-            }
-            else
-            {
-                change = TraverseMethodBody(oldMethod.Children, newMethod.Children);
-            }
-
-            return change;
-        }
-
-        /// <summary>
         /// Compares all oldChildNodes with all newChildNodes.
         /// if a child has also any children then this method will again 
         /// be called with the childs.Children (recursion). All comments 
@@ -542,11 +514,14 @@ namespace Tfs_Error_Location
         /// </summary>
         /// <param name="oldChildren">contains the old childNodes</param>
         /// <param name="newChildren">contains the new childNodes</param>
+        /// <param name="ignoreComments">indicates if comments should be taken into
+        /// account while calculating the methodcomparison result</param>
         /// <returns>if a changes was found: the AstNode where the first 
         /// change is detected, null otherwise</returns>
-        private static AstNode TraverseMethodBodyIgnoringComments(
+        private static AstNode TraverseAstNodes(
             IEnumerable<AstNode> oldChildren,
-            IEnumerable<AstNode> newChildren)
+            IEnumerable<AstNode> newChildren,
+            bool ignoreComments)
         {
             int counter = 0;
             AstNode change = null;
@@ -558,17 +533,14 @@ namespace Tfs_Error_Location
                     return newChild;
                 }
 
-                //the role of a node indicates if it is a comment or not
-                //skip all comments
-                if (oldChild.Role.ToString().Equals(s_CommentString))
+                if (SkipNode(oldChild, ignoreComments))
                 {
                     continue;
                 }
 
                 newChild = newChildren.ElementAt(counter);
 
-                //skip all comments
-                while (newChild.Role.ToString().Equals(s_CommentString))
+                while (SkipNode(newChild, ignoreComments))
                 {
                     counter ++;
                     newChild = newChildren.ElementAt(counter);
@@ -585,8 +557,7 @@ namespace Tfs_Error_Location
                         return change;
                     }
 
-                    change = TraverseMethodBodyIgnoringComments
-                        (oldChild.Children, newChild.Children);
+                    change = TraverseAstNodes(oldChild.Children, newChild.Children, ignoreComments);
                     if (change != null)
                     {
                         return change;
@@ -594,67 +565,8 @@ namespace Tfs_Error_Location
                 }
                 else
                 {
-                    string old = oldChild.GetText();
-                    string newText = newChild.GetText();
-                    if (!old.Equals(newText))
-                    {
-                        change = newChild;
-                        return change;
-                    }
-                }
-
-                counter++;
-            }
-
-            return change;
-        }
-
-        /// <summary>
-        /// Compares all oldChildNodes with all newChildNodes.
-        /// if a child has also any children then this method will again 
-        /// be called with the childs.Children (recursion)
-        /// </summary>
-        /// <param name="oldChildren">contains the old childNodes</param>
-        /// <param name="newChildren">contains the new childNodes</param>
-        /// <returns>true if all old childNodes are equal to all new childNodes, 
-        /// false otherwise</returns>
-        private static AstNode TraverseMethodBody(
-            IEnumerable<AstNode> oldChildren,
-            IEnumerable<AstNode> newChildren)
-        {
-            int counter = 0;
-
-            AstNode change = null;
-            foreach (AstNode oldChild in oldChildren)
-            {
-                if (counter >= newChildren.Count())
-                {
-                    return null;
-                }
-
-                AstNode newChild = newChildren.ElementAt(counter);
-
-                //if the children also has children then the same method 
-                //is called for the child.children
-                //otherwise the text of the current old and new node is compared
-                if (oldChild.HasChildren)
-                {
-                    if (!newChild.HasChildren)
-                    {
-                        change = newChild;
-                        return change;
-                    }
-
-                    change = TraverseMethodBody(oldChild.Children, newChild.Children);
-                    if (change != null)
-                    {
-                        return change;
-                    }
-                }
-                else
-                {
-                    string old = oldChild.GetText();
-                    string newText = newChild.GetText();
+                    string old = oldChild.ToString();
+                    string newText = newChild.ToString();
                     if (!old.Equals(newText))
                     {
                         change = newChild;
@@ -713,7 +625,7 @@ namespace Tfs_Error_Location
             foreach (ParameterDeclaration parameter in parameters)
             {
                 //add all parameters to the result string
-                parameterString = parameterString + parameter.GetText() + ",";
+                parameterString = parameterString + parameter.ToString() + ",";
             }
 
             if (!parameterString.Equals(String.Empty))
@@ -741,6 +653,24 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
+        /// checks if the two trees were created successfully (without parsing errors)
+        /// </summary>
+        /// <param name="oldTree">is the syntaxTree for the old file content</param>
+        /// <param name="newTree">is the syntaxTree for the new file content</param>
+        /// <param name="errorLogWriter">StreamWriter used for all errors</param>
+        /// <returns>true if no errors occurred, false otherwise</returns>
+        private static bool CheckSyntaxTrees(
+            SyntaxTree oldTree,
+            SyntaxTree newTree,
+            StreamWriter errorLogWriter)
+        {
+            bool result = (CheckSyntaxTreeErrors(oldTree, errorLogWriter) &&
+                           CheckSyntaxTreeErrors(newTree, errorLogWriter));
+
+            return result;
+        }
+
+        /// <summary>
         /// checks if any syntax errors occurred in the syntaxTree.
         /// prints the errors to the errorLogStream.
         /// </summary>
@@ -751,9 +681,10 @@ namespace Tfs_Error_Location
             SyntaxTree tree,
             StreamWriter errorLogWriter)
         {
-            List<Error> errors = tree.Errors;
+            //ignore warnings
+            IEnumerable<Error> errors = tree.Errors.Where(s => s.ErrorType != ErrorType.Warning);
 
-            if (errors.Count == 0)
+            if (!errors.Any())
             {
                 return true;
             }
@@ -762,12 +693,42 @@ namespace Tfs_Error_Location
                 foreach (Error error in errors)
                 {
                     errorLogWriter.WriteLine
-                        ("Error occured in File {0} in Line {1} : {2}", tree.FileName,
+                        ("Error occured in File {0} in Line {1} : {2}.", tree.FileName,
                             error.Region.BeginLine, error.Message);
                 }
                 errorLogWriter.Flush();
                 return false;
             }
+        }
+
+        /// <summary>
+        /// checks if the given astNode should be skipped or not. 
+        /// </summary>
+        /// <param name="node">the node which should be checked</param>
+        /// <param name="filterComments">indicates if comments should be skipped</param>
+        /// <returns>true if the node should be skipped, false otherwise</returns>
+        private static bool SkipNode(
+            AstNode node,
+            bool filterComments)
+        {
+            string role = node.Role.ToString();
+
+            bool result = (role.Equals(s_Comment) && filterComments) || role.Equals(s_NewLine);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Finds the exact StartLocation for the method. Method summary comments
+        /// are ignored.
+        /// </summary>
+        /// <param name="method">refers to a method/constructor/destructor</param>
+        /// <returns>the StartLocation of the method</returns>
+        private static TextLocation FindStartLocation(EntityDeclaration method)
+        {
+            IEnumerable<AstNode> nodes = method.Children.Where(s => (!SkipNode(s, true)));
+
+            return nodes.First().StartLocation;
         }
     }
 }

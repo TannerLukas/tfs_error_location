@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -11,12 +12,14 @@ namespace Tfs_Error_Location
     /// </summary>
     public class ServerItemInformation
     {
-        public ServerItemInformation(
-            string filePath)
+        public ServerItemInformation(string filePath)
         {
             ServerPath = filePath;
             FileName = CreateFileName(filePath);
             ChangesForChangeset = new Dictionary<int, MethodComparisonResult>();
+            WorkItemChangesets = new Dictionary<int, List<int>>();
+            Errors = new Dictionary<int, string>();
+            IsDeleted = false;
         }
 
         /// <summary>
@@ -49,6 +52,16 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
+        /// contains all workItems with their corresponding changesets, to 
+        /// which the serverItem belongs.
+        /// </summary>
+        public Dictionary<int, List<int>> WorkItemChangesets
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
         /// contains the final result of the methodcomparison of all versions 
         /// of the serveritem.
         /// </summary>
@@ -59,21 +72,57 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
+        /// contains the errors as a string for each changeset.
+        /// if no errors occured then it is empty.
+        /// </summary>
+        public Dictionary<int, string> Errors
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// defines if the serverItem was deleted in a changeset
+        /// </summary>
+        public bool IsDeleted
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// sets the state of the IsDeleted propery
+        /// </summary>
+        /// <param name="isDeleted">defines if the serverItem was deleted or not</param>
+        public void SetDeletedState(bool isDeleted)
+        {
+            IsDeleted = isDeleted;
+        }
+
+        /// <summary>
         /// adds the new changeset with the methodcomparison result to ChangesForChangeset.
         /// if the aggregated result already contains a result then the results are merged.
         /// </summary>
         /// <param name="changesetId">the id of the new changeset</param>
+        /// <param name="workItemId">specifies the id the workItem</param>
         /// <param name="comparisonResult">the new result of the methodcomparison</param>
         public void AddChangesetResult(
             int changesetId,
+            int workItemId,
             MethodComparisonResult comparisonResult)
         {
             if (ChangesForChangeset == null)
             {
                 ChangesForChangeset = new Dictionary<int, MethodComparisonResult>();
             }
-            
+
             ChangesForChangeset.Add(changesetId, comparisonResult);
+
+            //check if workItem information should also be added to the serverItem
+            if (workItemId != 0)
+            {
+                AddWorkItemId(workItemId, changesetId);
+            }
 
             if (AggregatedResult == null)
             {
@@ -85,7 +134,53 @@ namespace Tfs_Error_Location
                 //if more than one result is added the results should be merged
                 AggregatedResult.AggregateMethodResults(comparisonResult);
             }
+        }
 
+        /// <summary>
+        /// adds all parsing errors for the given changeset to the
+        /// Errors property
+        /// </summary>
+        /// <param name="stream">contains the errors</param>
+        /// <param name="changesetId">the changset number</param>
+        public void AddParsingErrors(
+            MemoryStream stream,
+            int changesetId)
+        {
+            using (StreamReader reader = new StreamReader(stream))
+            {
+                stream.Position = 0;
+                string errors = reader.ReadToEnd();
+                Errors.Add(changesetId, errors);
+            }
+        }
+
+        public void PrintServerItemErrors()
+        {
+            foreach (KeyValuePair<int, string> error in Errors)
+            {
+                Console.WriteLine
+                    (string.Format
+                        ("Errors occurred in changeset: {0} : {1}", error.Key, error.Value));
+            }
+        }
+
+        /// <summary>
+        /// adds new workItem + changeset information to the WorkItemsChangesets property
+        /// </summary>
+        /// <param name="workItemId">the id of the workItem</param>
+        /// <param name="changesetId">the id of the changeset</param>
+        private void AddWorkItemId(
+            int workItemId,
+            int changesetId)
+        {
+            if (!WorkItemChangesets.ContainsKey(workItemId))
+            {
+                WorkItemChangesets.Add(workItemId, new List<int> {changesetId});
+            }
+            else
+            {
+                WorkItemChangesets[workItemId].Add(changesetId);
+            }
         }
 
         /// <summary>
@@ -97,7 +192,7 @@ namespace Tfs_Error_Location
         private static string CreateFileName(string serverPath)
         {
             string[] fileNameToken = serverPath.Split('/');
-            return fileNameToken[fileNameToken.Length-1];         
+            return fileNameToken[fileNameToken.Length - 1];
         }
     }
 }

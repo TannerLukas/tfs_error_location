@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
-using System.Security.Policy;
-using System.Text;
 using System.Windows.Forms;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
@@ -32,7 +30,8 @@ namespace Gui_Demo
             RichTextBox oldTextBox,
             RichTextBox newTextBox)
         {
-            DeSelectAllTextBoxes(oldTextBox, newTextBox);
+            DeSelectTextBox(oldTextBox);
+            DeSelectTextBox(newTextBox);
 
             TreeNode node = trView.SelectedNode;
 
@@ -71,22 +70,18 @@ namespace Gui_Demo
         }
 
         /// <summary>
-        /// deselects the text in both textBoxes
+        /// deselects the text in a textbox
         /// </summary>
-        /// <param name="oldTextBox">contains the content of the old file</param>
-        /// <param name="newTextBox">contains the content of the new file</param>
-        public static void DeSelectAllTextBoxes(
-            RichTextBox oldTextBox,
-            RichTextBox newTextBox)
+        /// <param name="textBox">the textBox from which to all lines should be deselected</param>
+        public static void DeSelectTextBox(
+            RichTextBox textBox)
         {
-            newTextBox.SelectionBackColor = Color.White;
-            newTextBox.SelectAll();
-            oldTextBox.SelectionBackColor = Color.White;
-            oldTextBox.SelectAll();
+            textBox.SelectionBackColor = Color.White;
+            textBox.SelectAll();
         }
 
         /// <summary>
-        /// selects all methods for a givent method status in a textBox. the textbox 
+        /// selects all methods for a given method status in a textBox. the textbox 
         /// in which the selection should be made depends on the method status.
         /// </summary>
         /// <param name="node">the selected treenode</param>
@@ -100,12 +95,17 @@ namespace Gui_Demo
             //get the textbox in which something should be highlighted
             RichTextBox searchBox = GetTextBoxToSearchIn(node, oldTextBox, newTextBox);
 
+            //just to be sure everything is deselected
+            DeSelectTextBox(searchBox);
+
             List<Method> methods = (List<Method>)node.Tag;
 
             foreach (Method method in methods)
             {
-                SelectAstNode(searchBox, method.MethodDecl);
+                SelectAstNode(searchBox, method.StartLocation);
             }
+
+            searchBox.ScrollToCaret();
         }
 
         /// <summary>
@@ -124,9 +124,13 @@ namespace Gui_Demo
             TreeNode statusNode = node.Parent;
             RichTextBox searchBox = GetTextBoxToSearchIn(statusNode, oldTextBox, newTextBox);
 
+            //just to be sure everything is deselected
+            DeSelectTextBox(searchBox);
+
             Method method = (Method)node.Tag;
 
-            SelectAstNode(searchBox, method.MethodDecl);
+            SelectAstNode(searchBox, method.StartLocation);
+            searchBox.ScrollToCaret();
         }
 
         /// <summary>
@@ -144,24 +148,27 @@ namespace Gui_Demo
             TreeNode statusNode = node.Parent.Parent;
             RichTextBox searchBox = GetTextBoxToSearchIn(statusNode, oldTextBox, newTextBox);
 
+            //just to be sure everything is deselected
+            DeSelectTextBox(searchBox);
+
             AstNode changeEntryNode = (AstNode)node.Tag;
-            SelectAstNode(searchBox, changeEntryNode);
+            SelectAstNode(searchBox, changeEntryNode.StartLocation);
+            searchBox.ScrollToCaret();
         }
 
         /// <summary>
-        /// selects the givent astNode in the searchBox
+        /// selects the given astNode in the searchBox
         /// </summary>
         /// <param name="searchBox">the textbox in which something should be highlighted</param>
-        /// <param name="astNode">the astNode which should be highlighted</param>
+        /// <param name="startLocation">defines where the highlighting should start</param>
         private static void SelectAstNode(
             RichTextBox searchBox,
-            AstNode astNode)
+            TextLocation startLocation)
         {
             string[] lines = GetLinesFromTextBox(searchBox);
 
             //the methodDeclaration contains a TextLocation Property from
             //which the exact positon int the textbox could be deduced
-            TextLocation startLocation = astNode.StartLocation;
             int startLine = startLocation.Line;
             int startColumn = startLocation.Column;
 
@@ -185,7 +192,6 @@ namespace Gui_Demo
             searchBox.Select(startIndex, selectionLength);
             searchBox.HideSelection = true;
             searchBox.SelectionBackColor = Color.Yellow;
-            searchBox.ScrollToCaret();
         }
 
         /// <summary>
