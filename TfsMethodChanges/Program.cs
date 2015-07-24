@@ -19,7 +19,9 @@ namespace TfsMethodChanges
         {
             Changeset,
             WorkItem,
-            Query
+            QueryName,
+            QueryPerson,
+            QueryString
         }
 
         /// <summary>
@@ -54,13 +56,16 @@ namespace TfsMethodChanges
 
         private static ConsoleSpinner s_Spinner;
         private static Thread s_SpinnerThread;
+        private const bool s_ShowConsoleSpinner = false;
 
-        private const bool s_ShowConsoleSpinner = true;
+        private static ConsoleProgressBar s_ConsoleProgressBar;
+        private static Thread s_ProgressThread;
+        private const bool s_ShowProgressBar = true;
 
         private static void Main(string[] args)
         {
             ParseOptions(args);
-
+            
             try
             {
                 using (
@@ -69,6 +74,8 @@ namespace TfsMethodChanges
                         AutoFlush = true
                     })
                 {
+                    StartProgressThread();
+
                     Dictionary<int, ServerItemInformation> result = ExecuteRequest
                         (s_RequestType, s_RequestValue);
 
@@ -77,12 +84,46 @@ namespace TfsMethodChanges
             }
             catch (Exception exception)
             {
-                StopSpinningThread(s_FinishedError);
+                StopProgressThread("An Error occurred: ", true);
                 HandleException(exception);
             }
 
-            StopSpinningThread(s_FinishedOk);
             Exit(ExitCode.Ok);
+        }
+
+        private static void StartProgressThread()
+        {
+            if (s_ShowProgressBar)
+            {
+                s_ConsoleProgressBar = new ConsoleProgressBar();
+                s_ProgressThread = new Thread(s_ConsoleProgressBar.Turn);
+                s_ProgressThread.Start();
+            }
+        }
+
+        private static void StopProgressThread(string message, bool errorOccured)
+        {
+            if (s_ProgressThread != null &&
+                s_ProgressThread.IsAlive)
+            {
+                if (errorOccured)
+                {
+                    s_ConsoleProgressBar.SetErrorOccurred();
+                }
+                s_ConsoleProgressBar.RequestStop();
+
+                // Use the Join method to block the current thread  
+                // until the object's thread terminates.
+                s_ProgressThread.Join();
+                Console.ResetColor();
+
+                if (errorOccured)
+                {
+                    Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
+                }
+
+                Console.Write(message);
+            }
         }
 
         private static void StartSpinningThread()
@@ -105,7 +146,6 @@ namespace TfsMethodChanges
                 // Use the Join method to block the current thread  
                 // until the object's thread terminates.
                 s_SpinnerThread.Join();
-
                 Console.Write("\r" + message + "\r\n");
             }
         }
@@ -122,36 +162,39 @@ namespace TfsMethodChanges
         {
             Dictionary<int, ServerItemInformation> result = null;
 
-            TfsServiceProvider tfsService = new TfsServiceProvider();
+            TfsServiceProvider tfsService = new TfsServiceProvider(s_ConsoleProgressBar, s_ShowProgressBar);
 
             switch (requestType)
             {
                 case RequestType.Changeset:
                     int changesetId = Convert.ToInt32(requestValue);
-                    Console.WriteLine("Started working on changeset: " + changesetId + "\r\n");
-                    StartSpinningThread();
-                    result = tfsService.GetChangeSetInformationById(changesetId);
+                    result = tfsService.ExecuteChangesetRequest(changesetId);
                     break;
                 case RequestType.WorkItem:
                     int workItemId = Convert.ToInt32(requestValue);
-                    Console.WriteLine("Started working on workItem: " + workItemId + "\r\n");
-                    StartSpinningThread();
-                    result = tfsService.GetWorkItemInformations(workItemId);
+                    result = tfsService.ExecuteWorkItemRequest(workItemId);
                     break;
-                case RequestType.Query:
-                    //no need for conversion
-                    //TODO: process a query
+                case RequestType.QueryName:
+                    result = tfsService.ExecuteQueryByName(requestValue);
+                    break;
+                case RequestType.QueryPerson:
+                    result = tfsService.ExecuteQueryForPerson(requestValue);
+                    break;
+                case RequestType.QueryString:
+                    result = tfsService.ExecuteQueryString(requestValue);
                     break;
             }
 
             //check if the result was created successfully
             if (result == null)
             {
-                StopSpinningThread(s_FinishedError);
+                StopProgressThread("An Error occurred: ", true);
                 //print the tfs related errors
                 tfsService.PrintErrorReport();
                 Exit(ExitCode.NotOk);
             }
+
+            StopProgressThread(String.Empty, false);
 
             return result;
         }
@@ -164,7 +207,9 @@ namespace TfsMethodChanges
         {
             string changesetId = null;
             string workItemId = null;
-            string queryId = null;
+            string queryName = null;
+            string queryPerson = null;
+            string queryString = null;
 
             s_OptionSet = new OptionSet
             {
@@ -178,10 +223,20 @@ namespace TfsMethodChanges
                     v => workItemId = v
                 },
                 {
-                    "query|q=", "RequestOption with  {QUERYID} for MethodComparison.", v => queryId = v
+                    "qperson|qp=", @"RequestOption with  {QUERYPERSON} for MethodComparison. Has to be between """".",
+                    v => queryPerson = v
                 },
                 {
-                    "outputfile=|file=", "Stores the report in {FILE}. Default = /bin/debug/report.txt",
+                    "qname|qn=", "RequestOption with  {QUERYNAME} for MethodComparison.",
+                    v => queryName = v
+                },
+                {
+                    "qstring|qs=",
+                    @"RequestOption with  {QUERYSTRING} for MethodComparison. Has to be between """".",
+                    v => queryString = v
+                },
+                {
+                    "outputfile=|f=", "Stores the report in {FILE}. Default =  ./report.txt",
                     v => s_ReportFile = v
                 }
             };
@@ -205,7 +260,9 @@ namespace TfsMethodChanges
             {
                 {RequestType.Changeset, changesetId},
                 {RequestType.WorkItem, workItemId},
-                {RequestType.Query, queryId}
+                {RequestType.QueryName, queryName},
+                {RequestType.QueryPerson, queryPerson},
+                {RequestType.QueryString, queryString}
             };
 
             //get all requests where a corresponding request value was set
@@ -219,21 +276,51 @@ namespace TfsMethodChanges
                 ShowHelp(ExitCode.NotOk);
             }
 
+            //if this point is reached, only a single command line option was given        
+            s_RequestType = requestValues.First().Key;
+            s_RequestValue = requestValues.First().Value;
+
+            CheckRequest(s_RequestType, s_RequestValue);
+
             //use the standard report file name if no file name was given
             if (s_ReportFile == null)
             {
                 s_ReportFile = s_StandardReportFile;
             }
-
-            //if this point is reached, the parsing of the commandline options
-            //was successful. Therefore, requestValues consists of exactly one value. 
-            s_RequestType = requestValues.First().Key;
-            s_RequestValue = requestValues.First().Value;
         }
 
+        private static void CheckRequest(
+            RequestType type,
+            string requestValue)
+        {
+            //add check for the request value
+            if (requestValue.Equals(String.Empty))
+            {
+                //wrong amount of command line parameters.
+                Console.WriteLine("Please define a value for the request.");
+                ShowHelp(ExitCode.NotOk);
+            }
+
+            if (type == RequestType.Changeset ||
+                type == RequestType.WorkItem)
+            {
+                //the request value has to contain a positiv number
+                uint parsedValue;
+                if (!uint.TryParse(s_RequestValue, out parsedValue))
+                {
+                    Console.WriteLine("Please define a positive value for the request.");
+                    ShowHelp(ExitCode.NotOk);
+                }
+            }
+        }
+
+        /// <summary>
+        /// prints the exception message and exits the program
+        /// </summary>
+        /// <param name="exception">the exception which occurred</param>
         private static void HandleException(Exception exception)
         {
-            Console.WriteLine(exception.Message);
+            Console.WriteLine("\r\n" + exception.Message);
             Exit(ExitCode.NotOk);
         }
 

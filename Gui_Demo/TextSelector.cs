@@ -151,8 +151,9 @@ namespace Gui_Demo
             //just to be sure everything is deselected
             DeSelectTextBox(searchBox);
 
-            AstNode changeEntryNode = (AstNode)node.Tag;
-            SelectAstNode(searchBox, changeEntryNode.StartLocation);
+            TextLocation changeLocation = (TextLocation)node.Tag;
+
+            SelectAstNode(searchBox, changeLocation);
             searchBox.ScrollToCaret();
         }
 

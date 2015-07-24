@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -50,6 +51,9 @@ namespace Tfs_Error_Location
         /// <param name="ignoreComments">a flag which indicates if changes to comments 
         /// should also be taken into account when changes of a method are calculated.
         /// If it is true, all comments are ignored.</param>
+        /// <param name="resetAstProperties">a flag which indicates if the Ast properties of
+        /// the methods in result should be reseted. when executed for a huge amount of workItems
+        /// this saves a lot of memory.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
         /// and a list of their corresponding methods as values, null otherwise</returns>
         public static MethodComparisonResult CompareSyntaxTrees(
@@ -59,7 +63,8 @@ namespace Tfs_Error_Location
             string newFileName,
             MemoryStream errorLogStream,
             bool abortOnParsingError = true,
-            bool ignoreComments = true)
+            bool ignoreComments = true,
+            bool resetAstProperties = false)
         {
             //retrieve the syntaxTrees for the old and the new file
             SyntaxTree oldTree = GetSyntaxTree(oldFileContent, oldFileName);
@@ -91,6 +96,13 @@ namespace Tfs_Error_Location
             //add the added and deleted Method with their corresponding status to result
             result.AddAddedMethods(addedMethods);
             result.AddDeletedMethods(deletedMethods);
+
+            //could be used to save memory because the 
+            //methodDeclaration in the Method class is not needed anymore
+            if (resetAstProperties)
+            {
+                result.ResetMethods();
+            }
 
             return result;
         }
@@ -173,8 +185,8 @@ namespace Tfs_Error_Location
 
                 methods.Add
                     (new Method
-                        (methodDeclaration, FindStartLocation(methodDeclaration),
-                            new List<AstNode>(), fullName, signature, signatureWithParameters));
+                        (methodDeclaration, FindStartLocation(methodDeclaration), fullName,
+                            signature, signatureWithParameters));
             }
 
             return methods;
@@ -263,16 +275,19 @@ namespace Tfs_Error_Location
 
             string fullClassName = classType.Name + "." + method.Name;
 
+            Type namespaceDeclaration = typeof(NamespaceDeclaration);
+            Type typeDeclaration = typeof(TypeDeclaration);
+
             //a class could be defined within a class
             //therefore, each class name is added to the fully qualified name
             //finally the namespace is added
             while (nextParent != null)
             {
-                if (nextParent.GetType() == typeof(TypeDeclaration))
+                if (nextParent.GetType() == typeDeclaration)
                 {
                     fullClassName = ((TypeDeclaration)nextParent).Name + "." + fullClassName;
                 }
-                else if (nextParent.GetType() == typeof(NamespaceDeclaration))
+                else if (nextParent.GetType() == namespaceDeclaration)
                 {
                     //reached the namespace declaration
                     fullClassName = ((NamespaceDeclaration)nextParent).Name + "." + fullClassName;
@@ -380,7 +395,7 @@ namespace Tfs_Error_Location
 
                 if (changeNode != null)
                 {
-                    newMethod.AddChangeNode(changeNode);
+                    newMethod.SetChangeEntryLocation(changeNode);
                     result.AddChangedMethod(newMethod);
                 }
                 else

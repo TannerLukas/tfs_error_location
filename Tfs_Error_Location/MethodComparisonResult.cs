@@ -192,6 +192,17 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
+        /// resets properties of the methods which are contained in Result
+        /// </summary>
+        public void ResetMethods()
+        {
+            foreach (Method method in Result.Keys)
+            {
+                method.ClearMethodDeclaration();
+            }
+        }
+
+        /// <summary>
         /// prints a result overview of the methods to a file
         /// </summary>
         /// <param name="writer">Writer used to write the contents to the file</param>
@@ -215,7 +226,7 @@ namespace Tfs_Error_Location
                 if (printAllMethods || changedCounter > 0)
                 {
                     string methodRow = CreateFileReportMethodRow
-                        (method.MethodDecl.Name, tableWidth, columnSeperator,
+                        (method.GetMethodName(), tableWidth, columnSeperator,
                             changedCounter);
 
                     writer.WriteLine(methodRow);

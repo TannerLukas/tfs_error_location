@@ -69,9 +69,9 @@ namespace Gui_Demo
                 {
                     List<TreeNode> changedNodes = new List<TreeNode>();
 
-                    foreach (AstNode changeNode in method.ChangeNodes)
+                    if (method.ChangeEntryLocation.HasValue)
                     {
-                        changedNodes.Add(new TreeNode("Change Entry Point") {Tag = changeNode});
+                        changedNodes.Add(new TreeNode("Change Entry Point") { Tag = method.ChangeEntryLocation.Value });
                     }
 
                     TreeNode node = new TreeNode(method.FullyQualifiedName, changedNodes.ToArray())
@@ -85,6 +85,7 @@ namespace Gui_Demo
                 TreeNode methodStatusNode = new TreeNode
                     (methodStatus.ToString(), treeNodes.ToArray())
                 {
+                    //tag all methods of a status
                     Tag = statusResult[methodStatus]
                 };
 

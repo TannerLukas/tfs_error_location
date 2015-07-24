@@ -15,14 +15,12 @@ namespace Tfs_Error_Location
         public Method(
             EntityDeclaration methodDecl,
             TextLocation startLocation,
-            List<AstNode> changeNodes,
             string fullName,
             string signature,
             string completeSignature)
         {
             MethodDecl = methodDecl;
             StartLocation = startLocation;
-            ChangeNodes = changeNodes;
             FullyQualifiedName = fullName;
             Signature = signature;
             SignatureWithParameters = completeSignature;
@@ -38,9 +36,10 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// contains a list of the nodes which were changed
+        /// contains the TextLocation where the first change in the method
+        /// compared to the previous version was found.
         /// </summary>
-        public List<AstNode> ChangeNodes
+        public Nullable<TextLocation> ChangeEntryLocation
         {
             get;
             private set;
@@ -80,7 +79,7 @@ namespace Tfs_Error_Location
 
         /// <summary>
         /// defines the position where the method declaration starts.
-        /// all summary comments are ignored.
+        /// all summary comments/attributes are ignored.
         /// </summary>
         public TextLocation StartLocation
         {
@@ -89,17 +88,38 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// adds a new node to the list of changedNodes
+        /// sets the changeEntryLocation based on the startlocation in the astNode
         /// </summary>
         /// <param name="change">contains the node which was changed</param>
-        public void AddChangeNode(AstNode change)
+        public void SetChangeEntryLocation(AstNode change)
         {
-            if (ChangeNodes == null)
+            ChangeEntryLocation = change.StartLocation;
+        }
+
+        /// <summary>
+        /// filters the method name from the fully qualified name
+        /// </summary>
+        /// <returns>the name of the method</returns>
+        public string GetMethodName()
+        {
+            string[] nameTokens = FullyQualifiedName.Split('.');
+            if (nameTokens.Length > 1)
             {
-                ChangeNodes = new List<AstNode>();
+                return nameTokens[nameTokens.Length - 1];
             }
 
-            ChangeNodes.Add(change);
+            return String.Empty;
         }
+
+        /// <summary>
+        /// clears the methodDeclaration property.
+        /// this could be used in order to save memory.
+        /// </summary>
+        public void ClearMethodDeclaration()
+        {
+            MethodDecl = null;
+        }
+
+
     }
 }

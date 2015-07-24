@@ -16,8 +16,7 @@ namespace Tfs_Error_Location
         {
             ServerPath = filePath;
             FileName = CreateFileName(filePath);
-            ChangesForChangeset = new Dictionary<int, MethodComparisonResult>();
-            WorkItemChangesets = new Dictionary<int, List<int>>();
+            Changesets = new List<int>();
             Errors = new Dictionary<int, string>();
             IsDeleted = false;
         }
@@ -41,21 +40,9 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// contains the result of the methodcomparison for each changeset.
-        /// This is used in order to track which methods were changed in
-        /// which changeset.
+        /// contains a list of all changesets in which the ServerItem was contained
         /// </summary>
-        public Dictionary<int, MethodComparisonResult> ChangesForChangeset
-        {
-            get;
-            private set;
-        }
-
-        /// <summary>
-        /// contains all workItems with their corresponding changesets, to 
-        /// which the serverItem belongs.
-        /// </summary>
-        public Dictionary<int, List<int>> WorkItemChangesets
+        public List<int> Changesets
         {
             get;
             private set;
@@ -87,16 +74,7 @@ namespace Tfs_Error_Location
         public bool IsDeleted
         {
             get;
-            private set;
-        }
-
-        /// <summary>
-        /// sets the state of the IsDeleted propery
-        /// </summary>
-        /// <param name="isDeleted">defines if the serverItem was deleted or not</param>
-        public void SetDeletedState(bool isDeleted)
-        {
-            IsDeleted = isDeleted;
+            set;
         }
 
         /// <summary>
@@ -104,25 +82,12 @@ namespace Tfs_Error_Location
         /// if the aggregated result already contains a result then the results are merged.
         /// </summary>
         /// <param name="changesetId">the id of the new changeset</param>
-        /// <param name="workItemId">specifies the id the workItem</param>
         /// <param name="comparisonResult">the new result of the methodcomparison</param>
         public void AddChangesetResult(
             int changesetId,
-            int workItemId,
             MethodComparisonResult comparisonResult)
         {
-            if (ChangesForChangeset == null)
-            {
-                ChangesForChangeset = new Dictionary<int, MethodComparisonResult>();
-            }
-
-            ChangesForChangeset.Add(changesetId, comparisonResult);
-
-            //check if workItem information should also be added to the serverItem
-            if (workItemId != 0)
-            {
-                AddWorkItemId(workItemId, changesetId);
-            }
+            Changesets.Add(changesetId);
 
             if (AggregatedResult == null)
             {
@@ -161,25 +126,6 @@ namespace Tfs_Error_Location
                 Console.WriteLine
                     (string.Format
                         ("Errors occurred in changeset: {0} : {1}", error.Key, error.Value));
-            }
-        }
-
-        /// <summary>
-        /// adds new workItem + changeset information to the WorkItemsChangesets property
-        /// </summary>
-        /// <param name="workItemId">the id of the workItem</param>
-        /// <param name="changesetId">the id of the changeset</param>
-        private void AddWorkItemId(
-            int workItemId,
-            int changesetId)
-        {
-            if (!WorkItemChangesets.ContainsKey(workItemId))
-            {
-                WorkItemChangesets.Add(workItemId, new List<int> {changesetId});
-            }
-            else
-            {
-                WorkItemChangesets[workItemId].Add(changesetId);
             }
         }
 
