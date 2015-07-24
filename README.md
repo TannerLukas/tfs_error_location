@@ -1,13 +1,22 @@
 Overview of tfs_error_location:
 
-compares the methods of two files and checks if those methods are the same, were added/deleted or have been changed.
+Compares the methods of two files and detects which methods have changed based on syntaxtrees. 
+Further it can be linked to a TFS server in order to analyze all method changes of changesets/workItems/queries.
 
-Usages:
-	.) tfs_error_location.exe without parameters: uses two example files
-	.) tfs_error_location.exe oldFileName newFileName
-	.) or the Gui_Demo.exe could be started, where the user can define the contents of the old/new file via a textBox.
+**How to use**
+
+Analysis of local files:
+ - Tfs_Error_Location.exe without parameters: uses two example files
+ - Tfs_Error_Location.exe oldFile newFile
+ - Gui_Demo.exe, the content of the old/new file can be defined via a textBox.
 	
-If a syntax error occurs, no methods will be compared and the corresponding error message will be printed.
+Analysis of Team Foundation Server Items:
+ - Changeset: TfsMethodChanges.exe -c=number
+ - Workitem: TfsMethodChanges.exe -w=number
+ - Query (Name): TfsMethodChanges.exe -qname=name
+
+Further explanation can be obtained by TfsMethodChanges.exe --help.
+
 
 	
 	
