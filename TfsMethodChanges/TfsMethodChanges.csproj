@@ -75,11 +75,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConsoleProgressBar.cs" />
-    <Compile Include="ConsoleSpinner.cs" />
+    <Compile Include="IniFileInterpreter.cs" />
+    <Compile Include="IniFileParser.cs" />
+    <Compile Include="Line.cs" />
     <Compile Include="Options.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Section.cs" />
     <Compile Include="ServerItemInformation.cs" />
+    <Compile Include="TfsConfiguration.cs" />
     <Compile Include="TfsServiceProvider.cs" />
   </ItemGroup>
   <ItemGroup>

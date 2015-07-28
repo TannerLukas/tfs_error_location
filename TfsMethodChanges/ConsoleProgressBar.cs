@@ -13,12 +13,13 @@ namespace TfsMethodChanges
         private volatile bool m_ShouldStop;
         private volatile bool m_LoadFinished;
         private volatile bool m_ErrorOccurred;
+        private volatile string m_WorkMessage;
 
         private int m_ProgressBarComplete;
         private int m_ProgressBarMaxVal;
         private readonly int m_ProgressBarSize = Console.WindowWidth - 20;
-        private ConsoleColor m_BackColor = ConsoleColor.DarkGreen;
-        private ConsoleColor m_ProgressColor = ConsoleColor.Green;
+        private const ConsoleColor s_BackColor = ConsoleColor.DarkGreen;
+        private const ConsoleColor s_ProgressColor = ConsoleColor.Green;
 
         private const char s_ProgressBarChar = '█';
         //private const char s_ProgressBarChar = '#';
@@ -31,6 +32,7 @@ namespace TfsMethodChanges
             m_ShouldStop = false;
             m_LoadFinished = false;
             m_ErrorOccurred = false;
+            m_WorkMessage = String.Empty;
         }
 
         public void RefreshBar(
@@ -57,9 +59,10 @@ namespace TfsMethodChanges
             m_ErrorOccurred = true;
         }
 
-        public void SetLoadFinished()
+        public void SetLoadFinished(string message)
         {
             m_LoadFinished = true;
+            m_WorkMessage = message;
         }
 
         public void RequestStop()
@@ -103,7 +106,7 @@ namespace TfsMethodChanges
                 return;
             }
 
-            Console.Write("Finished\r\n");
+            Console.Write(m_WorkMessage + "\r\n");
 
             int lastVal = -1;
 
@@ -155,11 +158,12 @@ namespace TfsMethodChanges
                 fillBar += s_ProgressBarChar;
             }
 
-            Console.ForegroundColor = m_ProgressColor;
+            Console.ForegroundColor = s_ProgressColor;
             Console.Write(progress);
-            Console.ForegroundColor = m_BackColor;
+            Console.ForegroundColor = s_BackColor;
             Console.Write(fillBar);
             Console.ResetColor();
+            //prints the percentage with 2 digits after the comma
             Console.Write(" {0}%", (percentage * 100).ToString("N2"));
             Console.CursorLeft = cursorPosition;
         }

@@ -45,9 +45,6 @@ namespace Tfs_Error_Location
         /// <param name="newFileContent">the content of the new file</param>
         /// <param name="newFileName">the fileName of the new file</param>
         /// <param name="errorLogStream">is the stream to which the errors should be written</param>
-        /// <param name="abortOnParsingError">a flag which indicates if the programm 
-        /// should continue with the method comparison if any parsing errors are 
-        /// found for the syntaxTrees or abort.</param>
         /// <param name="ignoreComments">a flag which indicates if changes to comments 
         /// should also be taken into account when changes of a method are calculated.
         /// If it is true, all comments are ignored.</param>
@@ -62,7 +59,6 @@ namespace Tfs_Error_Location
             string newFileContent,
             string newFileName,
             MemoryStream errorLogStream,
-            bool abortOnParsingError = true,
             bool ignoreComments = true,
             bool resetAstProperties = false)
         {
@@ -72,8 +68,7 @@ namespace Tfs_Error_Location
 
             StreamWriter errorLogWriter = new StreamWriter(errorLogStream);
 
-            //if any parsing errors occured && abortOnParsingError==true -> abort
-            if (!CheckSyntaxTrees(oldTree, newTree, errorLogWriter) && abortOnParsingError)
+            if (!CheckSyntaxTrees(oldTree, newTree, errorLogWriter))
             {
                 return null;
             }
@@ -200,55 +195,26 @@ namespace Tfs_Error_Location
         /// <returns>a list of all methods in the syntax tree</returns>
         private static IEnumerable<EntityDeclaration> GetAllEntityDeclarations(SyntaxTree tree)
         {
-            IEnumerable<EntityDeclaration> methods = GetMethodDeclarations(tree);
-            IEnumerable<EntityDeclaration> constructors = GetConstructorDeclarations(tree);
-            IEnumerable<EntityDeclaration> destructors = GetDestructorDeclarations(tree);
+            IEnumerable<EntityDeclaration> methods = GetAllDescendantsByType<MethodDeclaration>(tree);
+            IEnumerable<EntityDeclaration> constructors = GetAllDescendantsByType<ConstructorDeclaration>(tree);
+            IEnumerable<EntityDeclaration> destructors = GetAllDescendantsByType<DestructorDeclaration>(tree);
+            IEnumerable<EntityDeclaration> properties = GetAllDescendantsByType<PropertyDeclaration>(tree);
 
             IEnumerable<EntityDeclaration> allMethods = ConcatenateIEnumerable
-                (methods, constructors, destructors);
+                (methods, constructors, destructors, properties);
 
             return allMethods;
         }
 
         /// <summary>
-        /// returns all descendants of type methodDeclaration in the syntaxtree
+        /// returns a list containing all Descendants of type T of a specific node in the astTree
         /// </summary>
-        /// <param name="tree">the syntaxtree which represents the code file</param>
-        /// <returns>an IEnumerable containing all MethodDeclarations in the tree</returns>
-        private static IEnumerable<EntityDeclaration> GetMethodDeclarations(SyntaxTree tree)
+        /// <typeparam name="T">defines the type from which all descandants should be retrieved</typeparam>
+        /// <param name="node">an AstNode in a SyntaxTree</param>
+        /// <returns>an IEnumerable containing all Descendants of type T in the tree</returns>
+        private static IEnumerable<T> GetAllDescendantsByType<T>(AstNode node)
         {
-            return (tree.Descendants.OfType<MethodDeclaration>());
-        }
-
-        /// <summary>
-        /// returns all parameterDeclarations for the given method
-        /// </summary>
-        /// <param name="method">the method which should be analyzed</param>
-        /// <returns>an IEnumerable containing all Parameters for a method</returns>
-        private static IEnumerable<ParameterDeclaration> GetParametersForMethod(
-            EntityDeclaration method)
-        {
-            return (method.Descendants.OfType<ParameterDeclaration>());
-        }
-
-        /// <summary>
-        /// returns all descendants of type ConstructorDeclaration in the syntaxtree
-        /// </summary>
-        /// <param name="tree">the syntaxtree which represents the code file</param>
-        /// <returns>an IEnumerable containing all Constructors in the tree</returns>
-        private static IEnumerable<EntityDeclaration> GetConstructorDeclarations(SyntaxTree tree)
-        {
-            return (tree.Descendants.OfType<ConstructorDeclaration>());
-        }
-
-        /// <summary>
-        /// returns all descendants of type DestructorDeclaration in the syntaxtree
-        /// </summary>
-        /// <param name="tree">the syntaxtree which represents the code file</param>
-        /// <returns>an IEnumerable containing all Destructors in the tree</returns>
-        private static IEnumerable<EntityDeclaration> GetDestructorDeclarations(SyntaxTree tree)
-        {
-            return (tree.Descendants.OfType<DestructorDeclaration>());
+            return node.Descendants.OfType<T>();
         }
 
         /// <summary>
@@ -634,7 +600,9 @@ namespace Tfs_Error_Location
         /// if the method does not contain any parameters</returns>
         private static string GetParametersAsStrings(EntityDeclaration method)
         {
-            IEnumerable<ParameterDeclaration> parameters = GetParametersForMethod(method);
+            IEnumerable<ParameterDeclaration> parameters =
+                GetAllDescendantsByType<ParameterDeclaration>(method);
+
             string parameterString = String.Empty;
 
             foreach (ParameterDeclaration parameter in parameters)

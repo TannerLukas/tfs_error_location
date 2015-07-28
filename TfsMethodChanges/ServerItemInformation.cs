@@ -18,7 +18,6 @@ namespace Tfs_Error_Location
             FileName = CreateFileName(filePath);
             Changesets = new List<int>();
             Errors = new Dictionary<int, string>();
-            IsDeleted = false;
         }
 
         /// <summary>
@@ -66,15 +65,6 @@ namespace Tfs_Error_Location
         {
             get;
             private set;
-        }
-
-        /// <summary>
-        /// defines if the serverItem was deleted in a changeset
-        /// </summary>
-        public bool IsDeleted
-        {
-            get;
-            set;
         }
 
         /// <summary>

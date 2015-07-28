@@ -16,43 +16,44 @@ namespace TfsMethodChanges
     /// provides the tfs services which are needed in order to download 
     /// changesets/workitems and execute a method comparison on their items.
     /// </summary>
-    public class TfsServiceProvider
+    internal class TfsServiceProvider
     {
-        private const string s_TeamProjectCollectionUri =
-            "https://iiaastfs.ww004.siemens.net/tfs/TIA";
-
         private const string s_CodeFileSuffix = ".cs";
         private const string s_AssemblyInfo = "AssemblyInfo.cs";
         private const string s_Changeset = "Changeset";
-        private const string s_TiaProject = "TIA";
+        private const int s_ExpectedMinTokens = 2;
 
         /// <summary>
         /// uses the Id of a serverItem as Keys. The ServerItemInformation class
         /// saves properties of the serverItem, including the results which were
         /// obtained from the AstComparer.
         /// </summary>
-        private Dictionary<int, ServerItemInformation> m_ServerItems;
+        private readonly Dictionary<int, ServerItemInformation> m_ServerItems;
 
-        private VersionControlServer m_VcServer;
-        private VersionControlArtifactProvider m_ArtifactProvider;
-        private WorkItemStore m_WorkItemStore;
-        private MemoryStream m_ErrorLogStream;
-        private StreamWriter m_ErrorLogWriter;
+        private readonly VersionControlServer m_VcServer;
+        private readonly VersionControlArtifactProvider m_ArtifactProvider;
+        private readonly WorkItemStore m_WorkItemStore;
+        private readonly MemoryStream m_ErrorLogStream;
+        private readonly StreamWriter m_ErrorLogWriter;
 
-        private ConsoleProgressBar m_ConsoleProgressBar;
-        private bool m_ShowProgressBar;
+        private readonly ConsoleProgressBar m_ConsoleProgressBar;
+        private readonly bool m_ShowProgressBar;
 
-        public TfsServiceProvider(ConsoleProgressBar progressBar, bool showBar)
+        public TfsServiceProvider(
+            TfsConfiguration config,
+            ConsoleProgressBar progressBar,
+            bool showBar)
         {
+            m_ServerItems = new Dictionary<int, ServerItemInformation>();
             m_ConsoleProgressBar = progressBar;
             m_ShowProgressBar = showBar;
 
-            m_ServerItems = new Dictionary<int, ServerItemInformation>();
-
             //init the tfs services which are needed
+            string teamProjectCollectionUri = GetTfsConfigurationInformation(config);
             TfsTeamProjectCollection tfsTiaProject =
                 TfsTeamProjectCollectionFactory.GetTeamProjectCollection
-                    (new Uri(s_TeamProjectCollectionUri));
+                    (new Uri(teamProjectCollectionUri));
+
             m_WorkItemStore = tfsTiaProject.GetService<WorkItemStore>();
 
             m_VcServer = tfsTiaProject.GetService<VersionControlServer>();
@@ -61,6 +62,30 @@ namespace TfsMethodChanges
             //used for errors
             m_ErrorLogStream = new MemoryStream();
             m_ErrorLogWriter = new StreamWriter(m_ErrorLogStream) {AutoFlush = true};
+        }
+
+        /// <summary>
+        /// extracts the tfs configuration from the config parameter which should be used     
+        /// </summary>
+        /// <param name="config">contains the tfsConfiguration which should be used</param>
+        /// <returns>a string containing the definition of the teamProjectCollection</returns>
+        private static string GetTfsConfigurationInformation(TfsConfiguration config)
+        {
+            string seperatorChar = Path.AltDirectorySeparatorChar + String.Empty;
+            string server = config.Server;
+            string project = config.Project;
+
+            string teamProjectCollection;
+            if (config.Server.EndsWith(seperatorChar))
+            {
+                teamProjectCollection = server + project;
+            }
+            else
+            {
+                teamProjectCollection = server + seperatorChar + project;
+            }
+
+            return teamProjectCollection;
         }
 
         /// <summary>
@@ -74,9 +99,11 @@ namespace TfsMethodChanges
             // Changeset changeset = m_VcServer.GetChangeset(changesetId);
             // could be extended to :
             // GetChangeset(id, includeChanges, includeDownloadInfo, includeSourceRenames)
-            Changeset changeset = m_VcServer.GetChangeset(changesetId, true, true, true);
+            Changeset changeset = m_VcServer.GetChangeset(changesetId, true, true, false);
 
-            InitProgressBar(changeset.Changes.Count());
+            int changeCounter = changeset.Changes.Count();
+            string message = String.Format("Start to work on {0} changes.", changeCounter);
+            InitProgressBar(changeCounter, message);
 
             AnalyzeChangesOfChangeset(changesetId, changeset.Changes, true);
 
@@ -102,7 +129,11 @@ namespace TfsMethodChanges
             {
                 int changesAmount = linkedChangesets.Sum(c => c.Changes.Count());
 
-                InitProgressBar(changesAmount);
+                int changesetCounter = linkedChangesets.Count();
+                string message = String.Format
+                    ("Start to work on {0} changesets with {1} changes.", changesetCounter,
+                        changesAmount);
+                InitProgressBar(changesAmount, message);
 
                 int changeCounter = 0;
                 foreach (Changeset changeset in linkedChangesets)
@@ -177,56 +208,56 @@ namespace TfsMethodChanges
         /// 2) if it was found: it is executed and analyzed, otherwise an error message is shown.
         /// Note that if multiple queries match the requested queryName the first will be used.
         /// </summary>
-        /// <param name="queryName">the name of a query (typically a shared query),
+        /// <param name="queryPath">the name of a query (typically a shared query),
         /// but it also works with "My Tasks"</param>
         /// <returns>on success: a Dictionary which contains all ServerItemInformations, 
         /// null otherwise <see cref="m_ServerItems"/></returns>
-        public Dictionary<int, ServerItemInformation> ExecuteQueryByName(string queryName)
+        public Dictionary<int, ServerItemInformation> ExecuteQueryByName(string queryPath)
         {
-            Project teamProject = m_WorkItemStore.Projects[s_TiaProject];
-            QueryHierarchy hierarchy = teamProject.QueryHierarchy;
+            //split the queryPath in all path tokens
+            string[] pathTokens = queryPath.Split
+                (new char[] {Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar});
 
-            Guid queryId = FindQuery(hierarchy, queryName);
-
-            if (queryId.Equals(Guid.Empty))
+            if (pathTokens.Count() < s_ExpectedMinTokens)
             {
-                m_ErrorLogWriter.WriteLine("The query:" + queryName + " was not found");
+                m_ErrorLogWriter.WriteLine
+                    ("Please insert a valid queryName: project/path/queryname.");
                 return null;
             }
 
-            WorkItemCollection workItemsCollection = RunQueryOfGuid(queryId);
+            //the first part of the path refers to the projectName
+            string project = pathTokens.First();
 
-            if (workItemsCollection.Count > 0)
+            Project teamProject = m_WorkItemStore.Projects[project];
+            QueryHierarchy hierarchy = teamProject.QueryHierarchy;
+
+            //traverse through the folders and find the query
+            QueryDefinition query = FindQuery(hierarchy, queryPath);
+
+            if (query == null)
+            {
+                m_ErrorLogWriter.WriteLine
+                    ("The query:" + queryPath +
+                     " was not found or does not refer to a queryDefinition.");
+                return null;
+            }
+
+            WorkItemCollection workItems = RunQueryForWorkItems(query.QueryText);
+
+            if (workItems.Count > 0)
             {
                 //List<WorkItem> workItems = ConvertWorkItemCollectionToList(ref workItemsCollection);
                 //IEnumerable<WorkItem> filteredWorkItems = workItems.Where(w => w.ExternalLinkCount > 0);
 
-                AnalyzeWorkItems(ref workItemsCollection);
-            }
-            else
-            {
-                m_ErrorLogWriter.WriteLine("No WorkItems where found for: " + queryName);
-                return null;
-            }
-
-            return m_ServerItems;
-        }
-
-        public Dictionary<int, ServerItemInformation> ExecuteQueryByGuId(string guid)
-        {
-            WorkItemCollection workItems = RunQueryOfGuid(new Guid(guid));
-
-            if (workItems.Count > 0)
-            {
                 AnalyzeWorkItems(ref workItems);
             }
             else
             {
-                m_ErrorLogWriter.WriteLine("No WorkItems where found for: " + guid);
+                m_ErrorLogWriter.WriteLine("No WorkItems where found for: " + queryPath);
                 return null;
             }
 
-            return null;
+            return m_ServerItems;
         }
 
         /// <summary>
@@ -268,8 +299,10 @@ namespace TfsMethodChanges
         {
             List<int> processedChangesets = new List<int>();
 
-            InitProgressBar(workItems.Count);
-            
+            int workItemCounter = workItems.Count;
+            string message = String.Format("Start to work on {0} workitems.", workItemCounter);
+            InitProgressBar(workItemCounter, message);
+
             foreach (WorkItem item in workItems)
             {
                 List<Changeset> linkedChangesets = GetAllChangesetsOfWorkItem(item);
@@ -292,34 +325,36 @@ namespace TfsMethodChanges
         }
 
         /// <summary>
-        /// searches for a query specified by its name
+        /// searches for a query specified by its path/name
         /// </summary>
         /// <param name="folder">a folder that my contain QueryDefinitions and other QueryFolders.</param>
-        /// <param name="queryName">contains the name of a query</param>
-        /// <returns>on success: the GUID of the query, Guid.Empty otherwise</returns>
-        private static Guid FindQuery(
+        /// <param name="queryPath">contains the whole path of a query</param>
+        /// <returns>on success: the QueryDefinition of the query, null otherwise</returns>
+        private static QueryDefinition FindQuery(
             IEnumerable<QueryItem> folder,
-            string queryName)
+            string queryPath)
         {
             foreach (QueryItem item in folder)
             {
-                if (item.Name.Equals(queryName, StringComparison.InvariantCultureIgnoreCase))
+                if (item.Path.Equals(queryPath, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    return item.Id;
+                    QueryDefinition queryDefinition = item as QueryDefinition;
+                    return queryDefinition;
                 }
 
                 QueryFolder itemFolder = item as QueryFolder;
                 if (itemFolder != null)
                 {
-                    Guid result = FindQuery(itemFolder, queryName);
-                    if (!result.Equals(Guid.Empty))
+                    QueryDefinition result = FindQuery(itemFolder, queryPath);
+
+                    if (result != null)
                     {
                         return result;
                     }
                 }
             }
 
-            return Guid.Empty;
+            return null;
         }
 
         /// <summary>
@@ -328,7 +363,9 @@ namespace TfsMethodChanges
         /// <param name="changeset">contains a tfs changeset</param>
         /// <param name="updateProgressBar">a flag which indicates if the progressBar 
         /// should be updated. it should be set to false only when working on a query</param>
-        private void GetChangeSetInformationByChangeset(Changeset changeset, bool updateProgressBar = true)
+        private void GetChangeSetInformationByChangeset(
+            Changeset changeset,
+            bool updateProgressBar = true)
         {
             int changesetId = changeset.ChangesetId;
             AnalyzeChangesOfChangeset(changesetId, changeset.Changes, updateProgressBar);
@@ -385,11 +422,79 @@ namespace TfsMethodChanges
             foreach (Change change in relevantChanges)
             {
                 int itemId = change.Item.ItemId;
-                Item currentItem = GetServerItem(itemId, changesetId);
 
-                if (currentItem == null)
+                //get the fileContents of the old/new version of the serverItems
+                string oldFileContent;
+                string newFileContent;
+                GetServerItemsContents
+                    (itemId, changesetId, change.ChangeType, out oldFileContent, out newFileContent);
+
+                if (oldFileContent != null &&
+                    newFileContent != null)
                 {
-                    continue;
+                    //if a serverItem with the itemId already exists then the methodcomparison result
+                    //is aggregated, otherwise a new serverItem is created
+                    string serverItemPath = change.Item.ServerItem;
+                    ServerItemInformation serverItem = GetOrCreateServerItemInformation
+                        (itemId, serverItemPath);
+
+                    //start with the method comparison
+                    using (MemoryStream errorStream = new MemoryStream())
+                    {
+                        MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
+                            (oldFileContent, serverItem.FileName, newFileContent,
+                                serverItem.FileName, errorStream, true, true);
+
+                        if (methodComparison != null)
+                        {
+                            //no errors occured: add the obtained result to the serverItem
+                            serverItem.AddChangesetResult(changesetId, methodComparison);
+                        }
+                        else
+                        {
+                            //a parsing error occured.
+                            serverItem.AddParsingErrors(errorStream, changesetId);
+                        }
+                    }
+                }
+
+                if (updateProgressBar)
+                {
+                    UpdateProgressBar();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="itemId"></param>
+        /// <param name="changesetId"></param>
+        /// <param name="changeType"></param>
+        /// <param name="oldContent"></param>
+        /// <param name="newContent"></param>
+        private void GetServerItemsContents(
+            int itemId,
+            int changesetId,
+            ChangeType changeType,
+            out string oldContent,
+            out string newContent)
+        {
+            oldContent = null;
+            newContent = null;
+
+            Item currentItem = GetServerItem(itemId, changesetId);
+
+            if (currentItem != null)
+            {
+                newContent = GetFileString(currentItem);
+
+                if (changeType.HasFlag(ChangeType.Delete))
+                {
+                    //the file was deleted therefore the old content is set to an empty string
+                    //the astcomparer will then mark all methods as deleted
+                    oldContent = String.Empty;
+                    return;
                 }
 
                 //with id - 1 the previous version of a file is returned
@@ -398,48 +503,11 @@ namespace TfsMethodChanges
                 //If no previous item is found, it is assumed that the currentItem was added in 
                 //this changeset. The content of the previous item will be declared with an empty
                 //string. The AstComparer will then mark all methods as added.
-                string oldFileContent = String.Empty;
+                oldContent = String.Empty;
 
                 if (previousItem != null)
                 {
-                    oldFileContent = GetFileString(previousItem);
-                }
-
-                string newFileContent = GetFileString(currentItem);
-
-                //if a serverItem with the itemId already exists then the methodcomparison result
-                //is aggregated, otherwise a new serverItem is created
-                string serverItemPath = change.Item.ServerItem;
-                ServerItemInformation serverItem = GetOrCreateServerItemInformation
-                    (itemId, serverItemPath);
-
-                if (change.ChangeType.HasFlag(ChangeType.Delete))
-                {
-                    serverItem.IsDeleted = true;
-                }
-
-                //start with the method comparison
-                using (MemoryStream errorStream = new MemoryStream())
-                {
-                    MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
-                        (oldFileContent, serverItem.FileName, newFileContent, serverItem.FileName,
-                            errorStream, true, true, true);
-
-                    if (methodComparison != null)
-                    {
-                        //no errors occured: add the obtained result to the serverItem
-                        serverItem.AddChangesetResult(changesetId, methodComparison);
-                    }
-                    else
-                    {
-                        //a parsing error occured.
-                        serverItem.AddParsingErrors(errorStream, changesetId);
-                    }
-                }
-
-                if (updateProgressBar)
-                {
-                    UpdateProgressBar();
+                    oldContent = GetFileString(previousItem);
                 }
             }
         }
@@ -527,19 +595,6 @@ namespace TfsMethodChanges
         }
 
         /// <summary>
-        /// Retrieves and execeutes the query which is defined via the guid.
-        /// </summary>
-        /// <param name="guid">containts the guid of the query</param>
-        /// <returns>a collection of workitems which are returned by the query</returns>
-        private WorkItemCollection RunQueryOfGuid(Guid guid)
-        {
-            QueryDefinition definition = m_WorkItemStore.GetQueryDefinition(guid);
-            WorkItemCollection workItems = RunQueryForWorkItems(definition.QueryText);
-
-            return workItems;
-        }
-
-        /// <summary>
         /// runs the query defined by text againts the WorkItemStore
         /// </summary>
         /// <param name="text">contains the text of the query which should be executed.</param>
@@ -553,12 +608,15 @@ namespace TfsMethodChanges
         /// inits the progress bar. 
         /// </summary>
         /// <param name="maxVal">contains the maxValue of the progress bar</param>
-        private void InitProgressBar(int maxVal)
+        /// <param name="message">contains a message which should be printed to the console</param>
+        private void InitProgressBar(
+            int maxVal,
+            string message)
         {
             if (m_ShowProgressBar && m_ConsoleProgressBar != null)
             {
                 m_ConsoleProgressBar.SetMaxVal(maxVal);
-                m_ConsoleProgressBar.SetLoadFinished();
+                m_ConsoleProgressBar.SetLoadFinished(message);
             }
         }
 
