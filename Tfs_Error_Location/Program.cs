@@ -43,11 +43,19 @@ namespace Tfs_Error_Location
                 return;
             }
 
+            CompareFileContents(oldFileName, oldFileContent, newFileName, newFileContent);
+        }
+
+        private static void CompareFileContents(
+            string oldFileName, 
+            string oldFileContent,
+            string newFileName,
+            string newFileContent
+            )
+        {
             if (oldFileContent == null ||
                 newFileContent == null)
             {
-                //an error occured
-                Console.WriteLine("An error occurred during the reading of a file.");
                 return;
             }
 

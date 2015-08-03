@@ -95,19 +95,25 @@ namespace TfsMethodChanges
         /// <returns>a Dictionary which contains all ServerItemInformations <see cref="m_ServerItems"/></returns>
         public Dictionary<int, ServerItemInformation> ExecuteChangesetRequest(int changesetId)
         {
-            // Get the changeset for a given Changeset Number: 
-            // Changeset changeset = m_VcServer.GetChangeset(changesetId);
-            // could be extended to :
-            // GetChangeset(id, includeChanges, includeDownloadInfo, includeSourceRenames)
-            Changeset changeset = m_VcServer.GetChangeset(changesetId, true, true, false);
+            try
+            {
+                // Get the changeset for a given Changeset Number: 
+                // GetChangeset(id, [includeChanges, includeDownloadInfo, includeSourceRenames])
+                Changeset changeset = m_VcServer.GetChangeset(changesetId, true, true, false);
 
-            int changeCounter = changeset.Changes.Count();
-            string message = String.Format("Start to work on {0} changes.", changeCounter);
-            InitProgressBar(changeCounter, message);
+                int changeCounter = changeset.Changes.Count();
+                string message = String.Format("Start to work on {0} changes.", changeCounter);
+                InitProgressBar(changeCounter, message);
 
-            AnalyzeChangesOfChangeset(changesetId, changeset.Changes, true);
+                AnalyzeChangesOfChangeset(changesetId, changeset.Changes, true);
 
-            UpdateProgressBar(changeset.Changes.Count());
+                UpdateProgressBar(changeset.Changes.Count());
+            }
+            catch (VersionControlException exception)
+            {
+                m_ErrorLogWriter.WriteLine("\r\n" + exception.Message);
+                return null;
+            }
 
             return m_ServerItems;
         }
@@ -129,6 +135,7 @@ namespace TfsMethodChanges
             {
                 int changesAmount = linkedChangesets.Sum(c => c.Changes.Count());
 
+                //init hte 
                 int changesetCounter = linkedChangesets.Count();
                 string message = String.Format
                     ("Start to work on {0} changesets with {1} changes.", changesetCounter,
@@ -218,26 +225,33 @@ namespace TfsMethodChanges
             string[] pathTokens = queryPath.Split
                 (new char[] {Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar});
 
-            if (pathTokens.Count() < s_ExpectedMinTokens)
+            //filter the empty tokens
+            IEnumerable<string> filteredPathTokens = pathTokens.Where(p => !p.Equals(String.Empty));
+
+            if (filteredPathTokens.Count() < s_ExpectedMinTokens)
             {
                 m_ErrorLogWriter.WriteLine
-                    ("Please insert a valid queryName: project/path/queryname.");
+                    ("Please insert a valid queryName: project/{path}/queryname.");
                 return null;
             }
 
+            /*
             //the first part of the path refers to the projectName
             string project = pathTokens.First();
 
             Project teamProject = m_WorkItemStore.Projects[project];
             QueryHierarchy hierarchy = teamProject.QueryHierarchy;
-
+            
             //traverse through the folders and find the query
-            QueryDefinition query = FindQuery(hierarchy, queryPath);
+            QueryDefinition query = FindQueryByPathComparison(hierarchy, queryPath);
+             * */
+             
+            QueryDefinition query = FindQueryByFolderStructure(filteredPathTokens);
 
             if (query == null)
             {
                 m_ErrorLogWriter.WriteLine
-                    ("The query:" + queryPath +
+                    ("The query: " + queryPath +
                      " was not found or does not refer to a queryDefinition.");
                 return null;
             }
@@ -286,8 +300,12 @@ namespace TfsMethodChanges
             {
                 m_ErrorLogStream.Position = 0;
                 string errors = reader.ReadToEnd();
-                Console.WriteLine();
-                Console.WriteLine(errors);
+
+                if (!errors.Equals(String.Empty))
+                {
+                    Console.WriteLine("\r\n\r\nERRORS: ");
+                    Console.WriteLine(errors);
+                }
             }
         }
 
@@ -324,13 +342,68 @@ namespace TfsMethodChanges
             }
         }
 
+        private QueryDefinition FindQueryByFolderStructure(IEnumerable<string> pathTokens)
+        {
+            string project = pathTokens.First();
+            Project teamProject = m_WorkItemStore.Projects[project];
+            QueryHierarchy hierarchy = teamProject.QueryHierarchy;
+
+            //skip the first element because it refers to the project definition
+            IEnumerable<string> remainingTokens = pathTokens.Skip(1);
+
+            QueryDefinition queryDefinition = TraverseQueryFolders(remainingTokens, hierarchy);
+
+            return queryDefinition;
+        }
+
+        private static QueryDefinition TraverseQueryFolders(
+            IEnumerable<string> pathTokens,
+            QueryHierarchy hierarchy)
+        {
+            //the number of pathtokens is >= 1
+
+            List<string> pathTokensList = pathTokens.ToList();
+
+            //if count == 1, the pathtokens contain only a QueryDefinition
+            //if counter > 1 the pathtokens contains some subfolders
+
+            QueryDefinition query = null;
+
+            if (pathTokensList.Count == 1)
+            {
+                QueryItem item = hierarchy[pathTokensList.First()];
+                query = item as QueryDefinition;
+            }
+            else if (pathTokensList.Count > 1)
+            {
+                string queryName = pathTokensList.Last();
+
+                QueryFolder folder = hierarchy;
+                for (int i = 0; i < pathTokensList.Count() - 1; i++)
+                {
+                    QueryItem item = folder[pathTokensList[i]];
+                    folder = item as QueryFolder;
+
+                    if (folder == null)
+                    {
+                        return null;
+                    }
+                }
+
+                QueryItem queryItem = folder[queryName];
+                query = queryItem as QueryDefinition;
+            }
+
+            return query;
+        }
+
         /// <summary>
         /// searches for a query specified by its path/name
         /// </summary>
         /// <param name="folder">a folder that my contain QueryDefinitions and other QueryFolders.</param>
         /// <param name="queryPath">contains the whole path of a query</param>
         /// <returns>on success: the QueryDefinition of the query, null otherwise</returns>
-        private static QueryDefinition FindQuery(
+        private static QueryDefinition FindQueryByPathComparison(
             IEnumerable<QueryItem> folder,
             string queryPath)
         {
@@ -343,9 +416,10 @@ namespace TfsMethodChanges
                 }
 
                 QueryFolder itemFolder = item as QueryFolder;
+
                 if (itemFolder != null)
                 {
-                    QueryDefinition result = FindQuery(itemFolder, queryPath);
+                    QueryDefinition result = FindQueryByPathComparison(itemFolder, queryPath);
 
                     if (result != null)
                     {
@@ -372,7 +446,8 @@ namespace TfsMethodChanges
         }
 
         /// <summary>
-        /// Retrieves all changesets of a workitem.
+        /// Retrieves all changesets of a workitem by accessing only the linked Items
+        /// where the type = changeset.
         /// </summary>
         /// <param name="item">contains the workItem information</param>
         /// <returns>a list of all associated changesets of a workitem</returns>
@@ -383,13 +458,23 @@ namespace TfsMethodChanges
             //a workitem has a list of external links, which can be of different types
             //the retrieve only the changesets, the ArtifactType of a link has to 
             //be of type "Changeset"
+
             foreach (ExternalLink link in item.Links.OfType<ExternalLink>())
             {
-                ArtifactId artifact = LinkingUtilities.DecodeUri(link.LinkedArtifactUri);
-                if (String.Equals(artifact.ArtifactType, s_Changeset, StringComparison.Ordinal))
+                try
                 {
-                    // Convert the artifact URI to Changeset object.
-                    result.Add(m_ArtifactProvider.GetChangeset(new Uri(link.LinkedArtifactUri)));
+                    ArtifactId artifact = LinkingUtilities.DecodeUri(link.LinkedArtifactUri);
+                    if (String.Equals(artifact.ArtifactType, s_Changeset, StringComparison.Ordinal))
+                    {
+                        // Convert the artifact URI to Changeset object.
+                        Changeset changeset = m_ArtifactProvider.GetChangeset
+                            (new Uri(link.LinkedArtifactUri));
+                        result.Add(changeset);
+                    }
+                }
+                catch (VersionControlException exception)
+                {
+                    m_ErrorLogWriter.WriteLine(exception);
                 }
             }
 
@@ -443,7 +528,7 @@ namespace TfsMethodChanges
                     {
                         MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
                             (oldFileContent, serverItem.FileName, newFileContent,
-                                serverItem.FileName, errorStream, true, true);
+                                serverItem.FileName, errorStream);
 
                         if (methodComparison != null)
                         {
@@ -466,13 +551,13 @@ namespace TfsMethodChanges
         }
 
         /// <summary>
-        /// 
+        /// retrieves the contents of the current and the old version of a file.
         /// </summary>
-        /// <param name="itemId"></param>
-        /// <param name="changesetId"></param>
-        /// <param name="changeType"></param>
-        /// <param name="oldContent"></param>
-        /// <param name="newContent"></param>
+        /// <param name="itemId">specifies the id of the serverItem</param>
+        /// <param name="changesetId">specifies the id of the changeset</param>
+        /// <param name="changeType">contains the type of change for a file</param>
+        /// <param name="oldContent">the content of the previous version of the file</param>
+        /// <param name="newContent">the content of the current version of the file</param>
         private void GetServerItemsContents(
             int itemId,
             int changesetId,

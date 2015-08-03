@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
+using ICSharpCode.NRefactory.Editor;
 
 namespace Tfs_Error_Location
 {
@@ -12,34 +14,53 @@ namespace Tfs_Error_Location
     /// </summary>
     public class Method
     {
+        private const int s_ParameterRegexValueIndex = 1;
+
         public Method(
-            EntityDeclaration methodDecl,
             TextLocation startLocation,
-            string fullName,
-            string signature,
-            string completeSignature)
+            TextLocation signatureLocation,
+            string namespaceName,
+            string typeName,
+            string methodName,
+            char seperator,
+            string signature)
         {
-            MethodDecl = methodDecl;
             StartLocation = startLocation;
-            FullyQualifiedName = fullName;
+            SignatureLocation = signatureLocation;
+            TypeName = typeName;
+            MethodName = methodName;
+            NamespaceName = namespaceName;
+            FullyQualifiedName = CreateFullyQualifiedMethodName
+                (methodName, typeName, namespaceName, seperator);
             Signature = signature;
-            SignatureWithParameters = completeSignature;
         }
 
         /// <summary>
-        /// contains the EntityDeclaration itself
+        /// contains the name of the method
         /// </summary>
-        public EntityDeclaration MethodDecl
+        public string MethodName
         {
             get;
             private set;
         }
 
         /// <summary>
-        /// contains the TextLocation where the first change in the method
-        /// compared to the previous version was found.
+        /// contains the namespace(s) of the method.
+        /// if the method is defined in a subnamespace then the namespace
+        /// equals namespace.subnamespace
         /// </summary>
-        public Nullable<TextLocation> ChangeEntryLocation
+        public string NamespaceName
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// contains the typeName(s) of the method.
+        /// if the method is defined in a subclass then the typeName
+        /// equals class.subclass
+        /// </summary>
+        public string TypeName
         {
             get;
             private set;
@@ -56,11 +77,11 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// contains the signature of a method.
-        /// modifiers returnValueType methodName.
-        /// e.g public static void Main
+        /// contains the TextLocation where the first change in the method
+        /// compared to the previous version was found. if no change was
+        /// found the value equals null.
         /// </summary>
-        public string Signature
+        public Nullable<TextLocation> ChangeEntryLocation
         {
             get;
             private set;
@@ -71,7 +92,7 @@ namespace Tfs_Error_Location
         /// modifiers returnValueType methodName (parameters).
         /// e.g public static void Main (string[] args)
         /// </summary>
-        public string SignatureWithParameters
+        public string Signature
         {
             get;
             private set;
@@ -79,9 +100,17 @@ namespace Tfs_Error_Location
 
         /// <summary>
         /// defines the position where the method declaration starts.
-        /// all summary comments/attributes are ignored.
         /// </summary>
         public TextLocation StartLocation
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// defines the position where the signature of the method declaration starts.
+        /// </summary>
+        public TextLocation SignatureLocation
         {
             get;
             private set;
@@ -97,29 +126,40 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// filters the method name from the fully qualified name
+        /// retrieves the parameters from the method from its signature
         /// </summary>
-        /// <returns>the name of the method</returns>
-        public string GetMethodName()
+        /// <returns>the parameters of a method as a string, if it does
+        /// not have any parameters String.Empty is returned.</returns>
+        public string GetParameters()
         {
-            string[] nameTokens = FullyQualifiedName.Split('.');
-            if (nameTokens.Length > 1)
-            {
-                return nameTokens[nameTokens.Length - 1];
-            }
+            //matches everything inside ()
+            Regex paramRegex = new Regex(@"\(([^)]*)\)");
+            Match match = paramRegex.Match(Signature);
 
-            return String.Empty;
+            return match.Groups[s_ParameterRegexValueIndex].Value;
         }
 
         /// <summary>
-        /// clears the methodDeclaration property.
-        /// this could be used in order to save memory.
+        /// creates the fully qualified method name
         /// </summary>
-        public void ClearMethodDeclaration()
+        /// <param name="methodName">contains the name of the method</param>
+        /// <param name="typeName">contains the typeName of the method</param>
+        /// <param name="namespaceName">contains the namespaceName of the method</param>
+        /// <param name="seperator"></param>
+        /// <returns>the fully qualified method name (seperated by '.')</returns>
+        private static string CreateFullyQualifiedMethodName(
+            string methodName,
+            string typeName,
+            string namespaceName,
+            char seperator)
         {
-            MethodDecl = null;
+            string name = typeName + seperator + methodName;
+            if (!namespaceName.Equals(String.Empty))
+            {
+                name = namespaceName + seperator + name;
+            }
+
+            return name;
         }
-
-
     }
 }

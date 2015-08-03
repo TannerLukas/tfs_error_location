@@ -19,7 +19,8 @@ namespace TfsMethodChanges
             "IniFile Error: Each Key in a section is only allowed once.";
 
         private const string s_RequiredPairsError =
-            "IniFile Error: Please define KeyValuePairs for " + s_ServerPathKey + " and " + s_ProjectKey + ".";
+            "IniFile Error: Please define KeyValuePairs for " + s_ServerPathKey + " and " +
+            s_ProjectKey + ".";
 
         private const string s_RequiredSectionError =
             "IniFile Error: Please define a " + s_ServerSection + " section.";
@@ -103,7 +104,7 @@ namespace TfsMethodChanges
             }
 
             errorLogWriter.WriteLine(s_RequiredPairsError);
-            return null;            
+            return null;
         }
 
         /// <summary>
@@ -113,7 +114,9 @@ namespace TfsMethodChanges
         /// <param name="pairs">contains several keyValuePairs</param>
         /// <param name="key">the key to search for</param>
         /// <returns>on success: the value of a keyValuePair defined by the key, null otherwise</returns>
-        private static string GetValueOfKeyValuePairs(IEnumerable<KeyValuePair<string, string>> pairs, string key)
+        private static string GetValueOfKeyValuePairs(
+            IEnumerable<KeyValuePair<string, string>> pairs,
+            string key)
         {
             IEnumerable<KeyValuePair<string, string>> keyPairs = pairs.Where
                 (p => EqualsComparison(p.Key, key));

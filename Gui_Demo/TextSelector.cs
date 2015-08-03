@@ -102,7 +102,7 @@ namespace Gui_Demo
 
             foreach (Method method in methods)
             {
-                SelectAstNode(searchBox, method.StartLocation);
+                SelectAstNode(searchBox, method.SignatureLocation);
             }
 
             searchBox.ScrollToCaret();
@@ -129,7 +129,7 @@ namespace Gui_Demo
 
             Method method = (Method)node.Tag;
 
-            SelectAstNode(searchBox, method.StartLocation);
+            SelectAstNode(searchBox, method.SignatureLocation);
             searchBox.ScrollToCaret();
         }
 
@@ -216,6 +216,7 @@ namespace Gui_Demo
             {
                 textSoFar += lines[i] + "\n";
             }
+
             int startIndex = textSoFar.Length + startColumn - 1;
 
             return startIndex;

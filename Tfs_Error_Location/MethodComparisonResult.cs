@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 
 
+
 namespace Tfs_Error_Location
 {
     /// <summary>
@@ -192,64 +193,48 @@ namespace Tfs_Error_Location
         }
 
         /// <summary>
-        /// resets properties of the methods which are contained in Result
+        /// creates the method row entries which are printed to the report file.
         /// </summary>
-        public void ResetMethods()
+        /// <param name="seperator">defines the character which is used to seperate the columns</param>
+        /// <returns>a list of created row strings</returns>
+        public List<string> CreateReportMethodRows(char seperator)
         {
-            foreach (Method method in Result.Keys)
+            List<string> rows = new List<string>();
+
+            //select all methods with a changedCounter > 0
+            //and group them by their fully qualified name
+            var methodsToPrint = from result in Result
+                let counter = GetChangedCounter(result.Value)
+                where counter > 0
+                orderby counter descending 
+                select new {MethodDecl = result.Key, Counter = counter}
+                into usedResults
+                group usedResults by usedResults.MethodDecl.FullyQualifiedName;
+                
+            foreach (var methodGroup in methodsToPrint)
             {
-                method.ClearMethodDeclaration();
-            }
-        }
-
-        /// <summary>
-        /// prints a result overview of the methods to a file
-        /// </summary>
-        /// <param name="writer">Writer used to write the contents to the file</param>
-        /// <param name="tableWidth">specifies the width of the output table in the file</param>
-        /// <param name="columnSeperator">contains a string which is used to seperate the columns</param>
-        /// <param name="printAllMethods">a flag which indicates of all methods should be
-        /// printed or only the methods where somehow changed(added/deleted/changed)</param>
-        public void PrintResultOverviewToFile(
-            StreamWriter writer,
-            int tableWidth,
-            string columnSeperator,
-            bool printAllMethods = false)
-        {   
-            foreach (KeyValuePair<Method, Dictionary<MethodStatus, int>> keyValuePair in Result)
-            {
-                Method method = keyValuePair.Key;
-                Dictionary<MethodStatus, int> statusCounter = keyValuePair.Value;
-
-                int changedCounter = GetChangedCounter(statusCounter);
-
-                if (printAllMethods || changedCounter > 0)
+                int groupCounter = methodGroup.Count();
+                foreach (var methodDeclaration in methodGroup)
                 {
-                    string methodRow = CreateFileReportMethodRow
-                        (method.GetMethodName(), tableWidth, columnSeperator,
-                            changedCounter);
+                    Method method = methodDeclaration.MethodDecl;
 
-                    writer.WriteLine(methodRow);
+                    //if a method with the same fully qualified name exists more 
+                    //than once then its parameters are printed
+                    string parameters = String.Empty;
+                    if (groupCounter > 1)
+                    {
+                        parameters = method.GetParameters();
+                    }
+
+                    string row = method.NamespaceName + seperator + method.TypeName + seperator +
+                                 method.MethodName + seperator + parameters + seperator +
+                                 methodDeclaration.Counter;
+
+                    rows.Add(row);
                 }
             }
 
-        }
-
-        public void PrintCompleteResultToFile(StreamWriter writer)
-        {
-            foreach (KeyValuePair<Method, Dictionary<MethodStatus, int>> keyValuePair in Result)
-            {
-                Method method = keyValuePair.Key;
-                Dictionary<MethodStatus, int> statusCounter = keyValuePair.Value;
-                writer.WriteLine("--------------------");
-                writer.WriteLine("Method: " + method.MethodDecl.Name);
-                foreach (KeyValuePair<MethodStatus, int> valuePair in statusCounter)
-                {
-                    MethodStatus status = valuePair.Key;
-                    int counter = valuePair.Value;
-                    writer.WriteLine("Status: " + status + " Counter: " + counter);
-                }
-            }
+            return rows;
         }
 
         /// <summary>
@@ -287,43 +272,12 @@ namespace Tfs_Error_Location
         /// <returns>the final amount of how often the methods was changed.</returns>
         private static int GetChangedCounter(Dictionary<MethodStatus, int> statusCounter)
         {
-            int counter = 0;
-            foreach (KeyValuePair<MethodStatus, int> statusPair in statusCounter)
-            {
-                MethodStatus status = statusPair.Key;
-                if (status != MethodStatus.NotChanged)
-                {
-                    counter += statusPair.Value;
-                }
-            }
+            //add all counters where the status does not equal NotChanged
+            int counter =
+                statusCounter.Where(s => s.Key != MethodStatus.NotChanged)
+                    .Select(p => p.Value).Sum();
 
             return counter;
-        }
-
-        /// <summary>
-        /// create a row in the file report for a method
-        /// </summary>
-        /// <param name="name">the name of the methods</param>
-        /// <param name="tableWidth"></param>
-        /// <param name="columnSeperator"></param>
-        /// <param name="changedCounter"></param>
-        /// <returns>a string containing the whole content of a
-        /// method (name/changedcounter) in the output table</returns>
-        private static string CreateFileReportMethodRow(
-            string name,
-            int tableWidth,
-            string columnSeperator,
-            int changedCounter)
-        {
-            //20 = changedCounter Column length
-            int methodPaddingValue = tableWidth - 20;
-
-            string text = columnSeperator + "\t" + name.PadRight(methodPaddingValue) + columnSeperator +
-                          new string(' ', 7) + changedCounter;
-
-            string newText = text.PadRight(tableWidth - 1) + columnSeperator;
-
-            return newText;
         }
     }
 }

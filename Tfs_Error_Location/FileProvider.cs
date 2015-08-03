@@ -18,10 +18,17 @@ namespace Tfs_Error_Location
             try
             {
                 //check if File exists
-                using (StreamReader reader = new StreamReader(fileName))
+                if (File.Exists(fileName))
                 {
-                    string fileContent = reader.ReadToEnd();
-                    return fileContent;
+                    using (StreamReader reader = new StreamReader(fileName))
+                    {
+                        string fileContent = reader.ReadToEnd();
+                        return fileContent;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Error: the file " + fileName + " does not exist.");
                 }
             }
             catch (IOException exception)

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -33,19 +34,25 @@ namespace TfsMethodChanges
             NotOk = -1
         }
 
-        private const string s_StandardReportFile = "report.txt";
+        private const string s_StandardReportFile = "report.csv";
         private const string s_DefaultIniFile = "config.ini";
 
-        private const int s_ReportTableWidth = 100;
-        private const string s_ColumnSeperator = "|";
+        private const char s_Seperator = ';';
+        private const string s_CsvExtension = ".csv";
+        private const string s_TxtExtension = ".txt";
 
-        private const string s_ChangedColumn =
-            s_ColumnSeperator + " ChangedCounter " + s_ColumnSeperator;
+        //column definitions which are used in the report file
+        private const string s_ServerItemColumn = "ServerItem";
+        private const string s_NamespaceColumn = "Namespace";
+        private const string s_TypeColumn = "Type";
+        private const string s_MethodNameColumn = "MethodName";
+        private const string s_ParametersColumn = "Parameters";
+        private const string s_CounterColumn = "ChangedCounter";
 
         private static OptionSet s_OptionSet;
         private static RequestType s_RequestType;
         private static string s_RequestValue;
-        private static string s_ReportSeperator;
+
         private static string s_ReportFile;
         private static string s_IniFile;
 
@@ -59,26 +66,17 @@ namespace TfsMethodChanges
 
             try
             {
-                using (
-                    StreamWriter reportWriter = new StreamWriter(s_ReportFile, false)
-                    {
-                        AutoFlush = true
-                    })
-                {
-                    //retrieve the tfsConfiguration which should be used from the iniFile
-                    TfsConfiguration tfsConfiguration = LoadIniFile(s_IniFile);
+                //retrieve the tfsConfiguration which should be used from the iniFile
+                TfsConfiguration tfsConfiguration = LoadIniFile(s_IniFile);
 
-                    StartProgressThread();
+                Dictionary<int, ServerItemInformation> result = ExecuteRequest
+                    (tfsConfiguration, s_RequestType, s_RequestValue);
 
-                    Dictionary<int, ServerItemInformation> result = ExecuteRequest
-                        (tfsConfiguration, s_RequestType, s_RequestValue);
-
-                    CreateFileReport(reportWriter, result);
-                }
+                PrintReport(result);
             }
             catch (Exception exception)
             {
-                StopProgressThread("An Error occurred: ", true);
+                StopProgressThread(true);
                 HandleException(exception);
             }
 
@@ -110,25 +108,26 @@ namespace TfsMethodChanges
                 },
                 {
                     "query|q=",
-                    @"RequestOption with {QUERYPATH/QUERYNAME} for MethodComparison. Has to be between """".",
+                    @"RequestOption with ""{QUERYPATH/QUERYNAME}"" for MethodComparison.",
                     v => query = v
                 },
                 {
                     "qperson|qp=",
-                    @"RequestOption with {QUERYPERSON} for MethodComparison. Has to be between """".",
+                    @"RequestOption with ""{QUERYPERSON}"" for MethodComparison.",
                     v => queryPerson = v
                 },
                 {
                     "qstring|qs=",
-                    @"RequestOption with {QUERYSTRING} for MethodComparison. Has to be between """".",
+                    @"RequestOption with ""{QUERYSTRING}"" for MethodComparison.",
                     v => queryString = v
                 },
                 {
-                    "ini=|i=", "Loads the configuration saved in {FILE}. Default =  ./config.ini",
+                    "ini=|i=", "Loads the configuration from {FILE}. \nDefault =  ./config.ini",
                     v => s_IniFile = v
                 },
                 {
-                    "outputfile=|f=", "Stores the report in {FILE}. Default =  ./report.txt",
+                    "outputfile=|o=",
+                    "Stores the report in {FILE}. \nDefault =  ./" + s_StandardReportFile,
                     v => s_ReportFile = v
                 }
             };
@@ -172,13 +171,9 @@ namespace TfsMethodChanges
             s_RequestType = requestValues.First().Key;
             s_RequestValue = requestValues.First().Value;
 
-            CheckRequest(s_RequestType, s_RequestValue);
+            CheckForValidRequest(s_RequestType, s_RequestValue);
 
-            //use the standard report file if no file name was given
-            if (s_ReportFile == null)
-            {
-                s_ReportFile = s_StandardReportFile;
-            }
+            CheckForValidReportFile();
 
             //use the standard iniFile if no file name was given
             if (s_IniFile == null)
@@ -188,11 +183,56 @@ namespace TfsMethodChanges
         }
 
         /// <summary>
+        /// checks if the given reportFileName is valid:
+        /// .) if it is valid the reportFile is created.
+        /// .) otherwise an exception is thrown and the program exits.
+        /// </summary>
+        private static void CheckForValidReportFile()
+        {
+            if (s_ReportFile == null)
+            {
+                //use the standard report file if no file name was given
+                s_ReportFile = s_StandardReportFile;
+            }
+            else if (!s_ReportFile.EndsWith(s_TxtExtension) &&
+                     !s_ReportFile.EndsWith(s_CsvExtension))
+            {
+                Console.WriteLine
+                    ("Please define a valid ReportFile extension with either " + s_CsvExtension +
+                     " or " + s_TxtExtension + ".");
+                ShowHelp(ExitCode.NotOk);
+            }
+
+            //try to create it
+            try
+            {
+                if (File.Exists(s_ReportFile))
+                {
+                    File.Delete(s_ReportFile);
+                }
+
+                File.Create(s_ReportFile).Close();
+            }
+            catch (IOException exception)
+            {
+                HandleException(exception);
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                HandleException(exception);
+            }
+            catch (ArgumentException exception)
+            {
+                HandleException(exception);
+            }
+        }
+
+        /// <summary>
         /// checks the correctness of a requestValue
         /// </summary>
         /// <param name="type">specifies the type of a request</param>
         /// <param name="requestValue">specifies the value of a request</param>
-        private static void CheckRequest(
+        private static void CheckForValidRequest(
             RequestType type,
             string requestValue)
         {
@@ -240,7 +280,7 @@ namespace TfsMethodChanges
             {
                 MemoryStream errorStream = new MemoryStream();
 
-                using (StreamWriter errorWriter = new StreamWriter(errorStream) { AutoFlush = true })
+                using (StreamWriter errorWriter = new StreamWriter(errorStream) {AutoFlush = true})
                 {
                     using (
                         FileStream fileStream = new FileStream
@@ -294,7 +334,6 @@ namespace TfsMethodChanges
         /// <param name="message">an message which is printed after the thread has finished</param>
         /// <param name="errorOccured">a flag which indicates if an error occurred</param>
         private static void StopProgressThread(
-            string message,
             bool errorOccured)
         {
             if (s_ProgressThread != null &&
@@ -310,13 +349,6 @@ namespace TfsMethodChanges
                 // until the object's thread terminates.
                 s_ProgressThread.Join();
                 Console.ResetColor();
-
-                if (errorOccured)
-                {
-                    Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r");
-                }
-
-                Console.Write(message);
             }
         }
 
@@ -332,6 +364,8 @@ namespace TfsMethodChanges
             RequestType requestType,
             string requestValue)
         {
+            StartProgressThread();
+
             Dictionary<int, ServerItemInformation> result = null;
 
             TfsServiceProvider tfsService = new TfsServiceProvider
@@ -361,122 +395,142 @@ namespace TfsMethodChanges
             //check if the result was created successfully
             if (result == null)
             {
-                StopProgressThread("An Error occurred: ", true);
+                StopProgressThread(true);
                 //print the tfs related errors
                 tfsService.PrintErrorReport();
                 Exit(ExitCode.NotOk);
             }
 
-            StopProgressThread(String.Empty, false);
+            StopProgressThread(false);
+            tfsService.PrintErrorReport();
 
             return result;
         }
 
         /// <summary>
-        /// creates the report file for the correct and error items
+        /// creates the final report of the comparison procedure.
+        /// the files which were compared successfully are printed to a file,
+        /// the files where the comparison lead to errors are printed to the console
         /// </summary>
-        /// <param name="writer">StreamWriter used to write to the report file</param>
-        /// <param name="result">contains all serverItems with their
-        /// aggregated method comparison result</param>
-        private static void CreateFileReport(
-            StreamWriter writer,
-            Dictionary<int, ServerItemInformation> result)
+        /// <param name="result"></param>
+        private static void PrintReport(Dictionary<int, ServerItemInformation> result)
         {
-            //create the needed headers/seperators
-            s_ReportSeperator = CreateFileReportSeperator(s_ReportTableWidth);
-
-            IEnumerable<ServerItemInformation> serverItems = result.Values;
-
-            IEnumerable<ServerItemInformation> correctItems = serverItems.Where
-                (s => (s.AggregatedResult != null && !s.Errors.Any()));
-
-            IEnumerable<ServerItemInformation> errorItems = serverItems.Except(correctItems);
-
-            PrintErrorItemsToFile(writer, errorItems);
-            PrintCorrectItemsToFile(writer, correctItems);
-        }
-
-        /// <summary>
-        /// prints all correct items in a formatted table into a file.
-        /// </summary>
-        /// <param name="writer">StreamWriter used to write to the report file</param>
-        /// <param name="items">the items which were successfully processed</param>
-        private static void PrintCorrectItemsToFile(
-            StreamWriter writer,
-            IEnumerable<ServerItemInformation> items)
-        {
-            string methodHeader = CreateFileReportMethodHeader();
-
-            foreach (ServerItemInformation item in items)
+            using (StreamWriter writer = new StreamWriter(s_ReportFile, false))
             {
-                //print serveritem row
-                writer.WriteLine(s_ReportSeperator);
+                //retrieve all serverItems
+                IEnumerable<ServerItemInformation> serverItems = result.Values;
 
-                string itemName = item.FileName;
+                //retrieve all serverItems which were processed successfully
+                IEnumerable<ServerItemInformation> correctItems = serverItems.Where
+                    (s => (s.AggregatedResult != null && !s.Errors.Any()));
 
-                string text = s_ColumnSeperator + " \t SERVERITEM: " + itemName;
-                writer.Write(text.PadRight(s_ReportTableWidth));
-                writer.WriteLine(s_ColumnSeperator);
-                writer.WriteLine(s_ReportSeperator);
+                //retrieve and print all serverItems which were processed with errors
+                IEnumerable<ServerItemInformation> errorItems = serverItems.Except(correctItems);
+                PrintErrorItems(errorItems);
 
-                //print methodheader row
-                writer.WriteLine(methodHeader);
-                writer.WriteLine(s_ReportSeperator);
-
-                //print the the methods with their counters
-                item.AggregatedResult.PrintResultOverviewToFile
-                    (writer, s_ReportTableWidth, s_ColumnSeperator, false);
-
-                writer.WriteLine(s_ReportSeperator);
-                writer.WriteLine();
+                PrintCorrectItems(correctItems, writer);
             }
         }
 
         /// <summary>
-        /// prints all items in which the comparison procedure lead to an error to a file.
+        /// prints all successfully processed ServerItems to the reportFile
         /// </summary>
-        /// <param name="writer">StreamWriter used to write to the report file</param>
-        /// <param name="items">the items which were not successfully processed</param>
-        private static void PrintErrorItemsToFile(
+        /// <param name="items">contains all successfully processed ServerItems</param>
+        /// <param name="writer">the StreamWriter which writes to the file</param>
+        /// <param name="sortItems">an optional flag which could be set in order to sort the rows</param>
+        private static void PrintCorrectItems(
+            IEnumerable<ServerItemInformation> items,
             StreamWriter writer,
-            IEnumerable<ServerItemInformation> items)
+            bool sortItems = true)
+        {
+            //define the columns which should be printed
+            List<string> columns = new List<string>
+            {
+                s_ServerItemColumn,
+                s_NamespaceColumn,
+                s_TypeColumn,
+                s_MethodNameColumn,
+                s_ParametersColumn,
+                s_CounterColumn
+            };
+
+            //has to be casted to a string
+            string seperator = s_Seperator + String.Empty;
+            string headline = String.Join(seperator, columns);
+
+            //get all rowEntries which should be printed
+            List<string> rows = new List<string>();
+            foreach (ServerItemInformation item in items)
+            {
+                string itemName = item.FileName;
+                List<string> methods = item.AggregatedResult.CreateReportMethodRows(s_Seperator);
+
+                //create for each method a corresponding rowEntry
+                rows.AddRange(methods.Select(method => itemName + s_Seperator + method));
+            }
+
+            //print the column names to the file
+            writer.WriteLine(headline);
+
+            if (sortItems)
+            {
+                int counterIndex = columns.IndexOf(s_CounterColumn);
+                int namespaceIndex = columns.IndexOf(s_NamespaceColumn);
+
+                if (counterIndex != -1 &&
+                    namespaceIndex != -1)
+                {
+                    //sort them before they are printed
+                    IEnumerable<string> sortedRows = from row in rows
+                        let cells = row.Split(s_Seperator)
+                        orderby cells[counterIndex] descending, 
+                        cells[namespaceIndex] ascending
+                        select row;
+
+                    //print the sorted rows to the reportFile
+                    PrintRowsToFile(writer, sortedRows);
+                    return;
+                }
+            }
+
+            //the unsorted rows should be printed if either no sorting was requested
+            //or the sorting mechanism could not be applied
+            PrintRowsToFile(writer, rows);
+        }
+
+        /// <summary>
+        /// prints all rows to the underlying stream
+        /// </summary>
+        /// <param name="writer">the StreamWriter which writes to the file</param>
+        /// <param name="rows">all methodRowEntries which should be printed</param>
+        private static void PrintRowsToFile(
+            StreamWriter writer,
+            IEnumerable<string> rows)
+        {
+            foreach (string row in rows)
+            {
+                writer.WriteLine(row);
+            }
+
+            string fullPath = ((FileStream)(writer.BaseStream)).Name;
+            Console.WriteLine("\r\nA Report was successfully written to: " + fullPath);
+        }
+
+        /// <summary>
+        /// prints all items in which the comparison procedure lead to an error to the console.
+        /// </summary>
+        /// <param name="items">the items which were not successfully processed</param>
+        private static void PrintErrorItems(IEnumerable<ServerItemInformation> items)
         {
             if (items.Any())
             {
-                writer.WriteLine("\r\nERRORS in ServerItems: ");
+                Console.WriteLine("\r\n\r\nERRORS in ServerItems: ");
 
                 foreach (ServerItemInformation item in items)
                 {
-                    writer.WriteLine("\t # ServerItem: " + item.FileName);
+                    Console.WriteLine("  # " + item.FileName);
                 }
-
-                writer.WriteLine();
-                writer.WriteLine();
             }
-        }
-
-        /// <summary>
-        /// creates a the method header string for the file report. padding is
-        /// used to align to table and its rows/columns correctly.
-        /// </summary>
-        /// <returns>the method header string for the file report</returns>
-        private static string CreateFileReportMethodHeader()
-        {
-            string methodHeader = s_ColumnSeperator +
-                                  "\tMETHOD".PadRight
-                                      (s_ReportTableWidth - s_ChangedColumn.Length - 1) +
-                                  s_ChangedColumn;
-            return methodHeader;
-        }
-
-        /// <summary>
-        /// creates the file report seperator for a given length
-        /// </summary>
-        /// <param name="length">indicates how long the seperator should be</param>
-        /// <returns>the string containing the file report seperator.</returns>
-        private static string CreateFileReportSeperator(int length)
-        {
-            return (" " + new string('-', length));
         }
 
         /// <summary>
@@ -485,7 +539,7 @@ namespace TfsMethodChanges
         /// <param name="exception">the exception which occurred</param>
         private static void HandleException(Exception exception)
         {
-            Console.WriteLine("\r\n" + exception.Message);
+            Console.WriteLine("\r\nAn Error occurred: " + exception.Message);
             Exit(ExitCode.NotOk);
         }
 
