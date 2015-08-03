@@ -17,9 +17,9 @@ Analysis of local files:
 Analysis of Team Foundation Server Items:
 
 Setup:
+
 An IniFile with the TfsServerConfiguration parameters has to be provided. This could be managed by overwriting the default "config.ini" file, 
-or by defining a new one and provide it via the commandline option -i=file to the program. Have a look at the default iniFile in order to know which 
-parameters should be defined.
+or by defining a new one and provide it via the commandline option -i=file to the program. Have a look at the default IniFile in order to know which parameters should be defined.
 
 Usages:
  - Changeset: TfsMethodChanges.exe -c=changesetId
