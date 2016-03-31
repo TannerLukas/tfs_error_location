@@ -50,13 +50,18 @@ namespace TfsMethodChanges
 
             //init the tfs services which are needed
             string teamProjectCollectionUri = GetTfsConfigurationInformation(config);
-            TfsTeamProjectCollection tfsTiaProject =
+
+            UICredentialsProvider provider = new UICredentialsProvider();
+
+            TfsTeamProjectCollection project =
                 TfsTeamProjectCollectionFactory.GetTeamProjectCollection
-                    (new Uri(teamProjectCollectionUri));
+                    (new Uri(teamProjectCollectionUri), provider);
 
-            m_WorkItemStore = tfsTiaProject.GetService<WorkItemStore>();
+            project.Authenticate();
 
-            m_VcServer = tfsTiaProject.GetService<VersionControlServer>();
+            m_WorkItemStore = project.GetService<WorkItemStore>();
+
+            m_VcServer = project.GetService<VersionControlServer>();
             m_ArtifactProvider = m_VcServer.ArtifactProvider;
 
             //used for errors
