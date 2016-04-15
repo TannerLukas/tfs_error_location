@@ -1,10 +1,11 @@
-﻿using System;
+﻿using MethodComparerison;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace MethodComparerison
+namespace CHSL
 {
     /// <summary>
     /// contains information of a serverItem (file) including the final result
@@ -18,19 +19,6 @@ namespace MethodComparerison
             FileName = CreateFileName(filePath);
             Changesets = new List<int>();
             Errors = new Dictionary<int, string>();
-        }
-
-        public override bool Equals(object obj)
-        {
-            if (!(obj is ServerItemInformation))
-                return false;
-            else
-                return ServerPath == ((ServerItemInformation)obj).ServerPath;
-        }
-
-        public override int GetHashCode()
-        {
-            return 56;
         }
 
         /// <summary>
