@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace Tfs_Error_Location
+namespace MethodComparerison
 {
     class FileProvider
     {

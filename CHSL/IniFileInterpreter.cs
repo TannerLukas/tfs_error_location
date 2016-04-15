@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace TfsMethodChanges
+namespace CHSL
 {
     /// <summary>
     /// interprets all sections of an iniFile

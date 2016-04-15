@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MethodStatus = Tfs_Error_Location.MethodComparisonResult.MethodStatus;
+using MethodStatus = MethodComparerison.MethodComparisonResult.MethodStatus;
 
-namespace Tfs_Error_Location
+namespace MethodComparerison
 {
     class Program
     {
@@ -22,7 +22,7 @@ namespace Tfs_Error_Location
             string newFileName;
             string newFileContent;
 
-            if (args.Count() == 0)
+            if (!args.Any())
             {
                 Console.WriteLine(s_ExecuteExamples);
                 //for now only with example files
@@ -61,7 +61,7 @@ namespace Tfs_Error_Location
 
             using (MemoryStream errorLogStream = new MemoryStream())
             {
-                MethodComparisonResult methodComparisonResult = AstComparer.CompareSyntaxTrees
+                MethodComparisonResult methodComparisonResult = MethodComparer.CompareSyntaxTrees
                     (oldFileContent, oldFileName, newFileContent, newFileName, errorLogStream);
 
                 if (methodComparisonResult != null)

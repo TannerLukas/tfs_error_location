@@ -13,12 +13,12 @@ using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
 using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
 using ParameterModifier = ICSharpCode.NRefactory.CSharp.ParameterModifier;
 
-namespace Tfs_Error_Location
+namespace MethodComparerison
 {
     /// <summary>
     /// compares two syntaxtrees in order to find out which methods have changed.
     /// </summary>
-    public class AstComparer
+    public class MethodComparer
     {
         /// <summary>
         /// An Enum which defines all possible options of the status of method.

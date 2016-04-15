@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace TfsMethodChanges
+namespace CHSL
 {
     /// <summary>
     /// contains configuration information which used to establish a connection

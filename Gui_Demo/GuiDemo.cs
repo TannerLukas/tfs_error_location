@@ -7,7 +7,8 @@ using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using ICSharpCode.NRefactory.CSharp;
-using Tfs_Error_Location;
+using MethodComparerison;
+using MethodComparer = MethodComparerison.MethodComparer;
 
 namespace Gui_Demo
 {
@@ -32,7 +33,7 @@ namespace Gui_Demo
             MethodComparisonResult methodComparisonResult;
             using (MemoryStream errorLogStream = new MemoryStream())
             {
-                methodComparisonResult = AstComparer.CompareSyntaxTrees
+                methodComparisonResult = MethodComparer.CompareSyntaxTrees
                     (oldText, "oldExampleFile.cs", newText, "newExampleFile.cs", errorLogStream);
 
                 if (methodComparisonResult == null)

@@ -7,7 +7,7 @@ using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
 using ICSharpCode.NRefactory.Editor;
 
-namespace Tfs_Error_Location
+namespace MethodComparerison
 {
     /// <summary>
     /// Contains several properties for a methodDeclaration.

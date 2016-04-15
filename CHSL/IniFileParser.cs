@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace TfsMethodChanges
+namespace CHSL
 {
     /// <summary>
     /// reads the contents of an iniFile and returns all sections of it

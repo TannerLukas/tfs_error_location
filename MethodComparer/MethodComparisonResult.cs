@@ -5,9 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-
-
-namespace Tfs_Error_Location
+namespace MethodComparerison
 {
     /// <summary>
     /// contains the result for the method comparison of the AstComparer.
@@ -258,7 +256,7 @@ namespace Tfs_Error_Location
         private Method CheckResultContainsMethod(Method method)
         {
             IEnumerable<Method> methods = Result.Keys;
-            Method matchingMethod = AstComparer.FindMatchingMethodDeclaration(method, methods);
+            Method matchingMethod = MethodComparer.FindMatchingMethodDeclaration(method, methods);
 
             return matchingMethod;
         }

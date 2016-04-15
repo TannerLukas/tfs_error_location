@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace Tfs_Error_Location
+namespace MethodComparerison
 {
     /// <summary>
     /// contains information of a serverItem (file) including the final result
@@ -18,6 +18,19 @@ namespace Tfs_Error_Location
             FileName = CreateFileName(filePath);
             Changesets = new List<int>();
             Errors = new Dictionary<int, string>();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (!(obj is ServerItemInformation))
+                return false;
+            else
+                return ServerPath == ((ServerItemInformation)obj).ServerPath;
+        }
+
+        public override int GetHashCode()
+        {
+            return 56;
         }
 
         /// <summary>

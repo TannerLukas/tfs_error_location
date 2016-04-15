@@ -6,9 +6,9 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using NDesk.Options;
-using Tfs_Error_Location;
+using MethodComparerison;
 
-namespace TfsMethodChanges
+namespace CHSL
 {
     internal class Program
     {

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
-using Tfs_Error_Location;
+using MethodComparerison;
 
 namespace Gui_Demo
 {

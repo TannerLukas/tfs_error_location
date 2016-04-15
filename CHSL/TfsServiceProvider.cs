@@ -8,9 +8,10 @@ using Microsoft.TeamFoundation;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.TeamFoundation.VersionControl.Client;
 using Microsoft.TeamFoundation.WorkItemTracking.Client;
-using Tfs_Error_Location;
+using MethodComparerison;
+using MethodComparer = MethodComparerison.MethodComparer;
 
-namespace TfsMethodChanges
+namespace CHSL
 {
     /// <summary>
     /// provides the tfs services which are needed in order to download 
@@ -531,7 +532,7 @@ namespace TfsMethodChanges
                     //start with the method comparison
                     using (MemoryStream errorStream = new MemoryStream())
                     {
-                        MethodComparisonResult methodComparison = AstComparer.CompareSyntaxTrees
+                        MethodComparisonResult methodComparison = MethodComparer.CompareSyntaxTrees
                             (oldFileContent, serverItem.FileName, newFileContent,
                                 serverItem.FileName, errorStream);
 
