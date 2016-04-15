@@ -6,17 +6,16 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using NDesk.Options;
-using MethodComparerison;
 
 namespace CHSL
 {
     internal class Program
     {
         /// <summary>
-        /// describes the different types of requests which could be send to 
-        /// the TfsServiceProvider.
+        /// describes the different types of queries which could be send to 
+        /// the TfsServiceProvider
         /// </summary>
-        private enum RequestType
+        private enum QueryType
         {
             Changeset,
             WorkItem,
@@ -42,16 +41,16 @@ namespace CHSL
         private const string s_TxtExtension = ".txt";
 
         //column definitions which are used in the report file
-        private const string s_ServerItemColumn = "ServerItem";
+        private const string s_ServerItemColumn = "FileName";
         private const string s_NamespaceColumn = "Namespace";
-        private const string s_TypeColumn = "Type";
+        private const string s_ClassColumn = "Class";
         private const string s_MethodNameColumn = "MethodName";
         private const string s_ParametersColumn = "Parameters";
-        private const string s_CounterColumn = "ChangedCounter";
+        private const string s_CounterColumn = "MethodVolatility";
 
         private static OptionSet s_OptionSet;
-        private static RequestType s_RequestType;
-        private static string s_RequestValue;
+        private static QueryType s_QueryType;
+        private static string s_QueryValue;
 
         private static string s_ReportFile;
         private static string s_IniFile;
@@ -69,8 +68,8 @@ namespace CHSL
                 //retrieve the tfsConfiguration which should be used from the iniFile
                 TfsConfiguration tfsConfiguration = LoadIniFile(s_IniFile);
 
-                Dictionary<int, ServerItemInformation> result = ExecuteRequest
-                    (tfsConfiguration, s_RequestType, s_RequestValue);
+                Dictionary<int, ServerItemInformation> result = ExecuteQuery
+                    (tfsConfiguration, s_QueryType, s_QueryValue);
 
                 PrintReport(result);
             }
@@ -91,7 +90,7 @@ namespace CHSL
         {
             string changesetId = null;
             string workItemId = null;
-            string query = null;
+            string queryName = null;
             string queryPerson = null;
             string queryString = null;
 
@@ -99,26 +98,26 @@ namespace CHSL
             {
                 {"h|?|help", "Show this help message.", v => ShowHelp(0)},
                 {
-                    "changeset|c=", "RequestOption with {CHANGESETID} for MethodComparison.",
+                    "changeset|c=", "QueryOption with {CHANGESETID} for MethodComparison.",
                     v => changesetId = v
                 },
                 {
-                    "workitem|w=", "RequestOption with {WORKITEMID} for MethodComparison.",
+                    "workitem|w=", "QueryOption with {WORKITEMID} for MethodComparison.",
                     v => workItemId = v
                 },
                 {
                     "query|q=",
-                    @"RequestOption with ""{QUERYPATH/QUERYNAME}"" for MethodComparison.",
-                    v => query = v
+                    @"QueryOption with ""{QUERYPATH/QUERYNAME}"" for MethodComparison.",
+                    v => queryName = v
                 },
                 {
                     "qperson|qp=",
-                    @"RequestOption with ""{QUERYPERSON}"" for MethodComparison.",
+                    @"QueryOption with ""{QUERYPERSON}"" for MethodComparison.",
                     v => queryPerson = v
                 },
                 {
                     "qstring|qs=",
-                    @"RequestOption with ""{QUERYSTRING}"" for MethodComparison.",
+                    @"QueryOption with ""{QUERYSTRING}"" for MethodComparison.",
                     v => queryString = v
                 },
                 {
@@ -147,31 +146,31 @@ namespace CHSL
                 HandleException(e);
             }
 
-            Dictionary<RequestType, string> request = new Dictionary<RequestType, string>
+            Dictionary<QueryType, string> query = new Dictionary<QueryType, string>
             {
-                {RequestType.Changeset, changesetId},
-                {RequestType.WorkItem, workItemId},
-                {RequestType.QueryName, query},
-                {RequestType.QueryPerson, queryPerson},
-                {RequestType.QueryString, queryString}
+                {QueryType.Changeset, changesetId},
+                {QueryType.WorkItem, workItemId},
+                {QueryType.QueryName, queryName},
+                {QueryType.QueryPerson, queryPerson},
+                {QueryType.QueryString, queryString}
             };
 
             //get all requests where a corresponding request value was set
-            var requestValues = request.Where(r => r.Value != null).ToList();
+            var queryValues = query.Where(r => r.Value != null).ToList();
 
-            if (requestValues.Count() > 1 ||
-                !requestValues.Any())
+            if (queryValues.Count() > 1 ||
+                !queryValues.Any())
             {
                 //wrong amount of command line parameters.
-                Console.WriteLine("A single request Option should be used.");
+                Console.WriteLine("A single query option should be used.");
                 ShowHelp(ExitCode.NotOk);
             }
 
             //if this point is reached, only a single command line option was given        
-            s_RequestType = requestValues.First().Key;
-            s_RequestValue = requestValues.First().Value;
+            s_QueryType = queryValues.First().Key;
+            s_QueryValue = queryValues.First().Value;
 
-            CheckForValidRequest(s_RequestType, s_RequestValue);
+            CheckForValidQuery(s_QueryType, s_QueryValue);
 
             CheckForValidReportFile();
 
@@ -228,28 +227,28 @@ namespace CHSL
         }
 
         /// <summary>
-        /// checks the correctness of a requestValue
+        /// checks the correctness of a queryValue
         /// </summary>
         /// <param name="type">specifies the type of a request</param>
-        /// <param name="requestValue">specifies the value of a request</param>
-        private static void CheckForValidRequest(
-            RequestType type,
-            string requestValue)
+        /// <param name="queryValue">specifies the value of a request</param>
+        private static void CheckForValidQuery(
+            QueryType type,
+            string queryValue)
         {
             //add check for the request value
-            if (requestValue.Equals(String.Empty))
+            if (queryValue.Equals(String.Empty))
             {
                 //wrong amount of command line parameters.
-                Console.WriteLine("Please define a value for the request.");
+                Console.WriteLine("Please define a value for the query.");
                 ShowHelp(ExitCode.NotOk);
             }
 
-            if (type == RequestType.Changeset ||
-                type == RequestType.WorkItem)
+            if (type == QueryType.Changeset ||
+                type == QueryType.WorkItem)
             {
-                //the request value has to contain a positiv number
+                //the queryValue has to contain a positiv number
                 uint parsedValue;
-                if (!uint.TryParse(s_RequestValue, out parsedValue))
+                if (!uint.TryParse(s_QueryValue, out parsedValue))
                 {
                     Console.WriteLine("Please define a positive value for the request.");
                     ShowHelp(ExitCode.NotOk);
@@ -356,12 +355,12 @@ namespace CHSL
         /// executes a request based on the requestType and value
         /// </summary>
         /// <param name="config">defines the used configuration of the tfsServer</param>
-        /// <param name="requestType">specifies which type of request should be executed <see cref="RequestType"/></param>
+        /// <param name="queryType">specifies which type of request should be executed <see cref="QueryType"/></param>
         /// <param name="requestValue">a string which contains the changesetID/workItemID/queryID</param>
         /// <returns>a Dictionary which contains all ServerItems</returns>
-        private static Dictionary<int, ServerItemInformation> ExecuteRequest(
+        private static Dictionary<int, ServerItemInformation> ExecuteQuery(
             TfsConfiguration config,
-            RequestType requestType,
+            QueryType queryType,
             string requestValue)
         {
             StartProgressThread();
@@ -371,23 +370,23 @@ namespace CHSL
             TfsServiceProvider tfsService = new TfsServiceProvider
                 (config, s_ConsoleProgressBar, s_ShowProgressBar);
 
-            switch (requestType)
+            switch (queryType)
             {
-                case RequestType.Changeset:
+                case QueryType.Changeset:
                     int changesetId = Convert.ToInt32(requestValue);
                     result = tfsService.ExecuteChangesetRequest(changesetId);
                     break;
-                case RequestType.WorkItem:
+                case QueryType.WorkItem:
                     int workItemId = Convert.ToInt32(requestValue);
                     result = tfsService.ExecuteWorkItemRequest(workItemId);
                     break;
-                case RequestType.QueryName:
+                case QueryType.QueryName:
                     result = tfsService.ExecuteQueryByName(requestValue);
                     break;
-                case RequestType.QueryPerson:
+                case QueryType.QueryPerson:
                     result = tfsService.ExecuteQueryForPerson(requestValue);
                     break;
-                case RequestType.QueryString:
+                case QueryType.QueryString:
                     result = tfsService.ExecuteQueryString(requestValue);
                     break;
             }
@@ -448,7 +447,7 @@ namespace CHSL
             {
                 s_ServerItemColumn,
                 s_NamespaceColumn,
-                s_TypeColumn,
+                s_ClassColumn,
                 s_MethodNameColumn,
                 s_ParametersColumn,
                 s_CounterColumn
