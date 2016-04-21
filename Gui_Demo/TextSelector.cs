@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 using ICSharpCode.NRefactory;
-using ICSharpCode.NRefactory.CSharp;
-using MethodComparerison;
+using MethodComparison;
 
 namespace Gui_Demo
 {

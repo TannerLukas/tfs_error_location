@@ -72,11 +72,11 @@
   <ItemGroup>
     <Reference Include="ICSharpCode.NRefactory, Version=5.0.0.0, Culture=neutral, PublicKeyToken=d4bfe873e7598c49, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\ICSharpCode.NRefactory.5.5.0\ICSharpCode.NRefactory.dll</HintPath>
+      <HintPath>..\packages\NRefactory\ICSharpCode.NRefactory.dll</HintPath>
     </Reference>
     <Reference Include="ICSharpCode.NRefactory.CSharp, Version=5.0.0.0, Culture=neutral, PublicKeyToken=d4bfe873e7598c49, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\ICSharpCode.NRefactory.5.5.0\ICSharpCode.NRefactory.CSharp.dll</HintPath>
+      <HintPath>..\packages\NRefactory\ICSharpCode.NRefactory.CSharp.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -90,7 +90,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MethodComparer.cs" />
-    <Compile Include="FileProvider.cs" />
     <Compile Include="Method.cs" />
     <Compile Include="MethodComparisonResult.cs" />
     <Compile Include="Program.cs" />

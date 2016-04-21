@@ -1,13 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
-using ICSharpCode.NRefactory.Editor;
 
-namespace MethodComparerison
+namespace MethodComparison
 {
     /// <summary>
     /// Contains several properties for a methodDeclaration.

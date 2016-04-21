@@ -1,11 +1,8 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 
-namespace MethodComparerison
+namespace MethodComparison
 {
     /// <summary>
     /// contains the result for the method comparison of the AstComparer.

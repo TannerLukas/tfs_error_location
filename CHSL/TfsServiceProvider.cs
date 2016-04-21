@@ -2,14 +2,12 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading;
 using Microsoft.TeamFoundation;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.TeamFoundation.VersionControl.Client;
 using Microsoft.TeamFoundation.WorkItemTracking.Client;
-using MethodComparerison;
-using MethodComparer = MethodComparerison.MethodComparer;
+using MethodComparison;
+using MethodComparer = MethodComparison.MethodComparer;
 
 namespace CHSL
 {
@@ -63,6 +61,7 @@ namespace CHSL
             m_WorkItemStore = project.GetService<WorkItemStore>();
 
             m_VcServer = project.GetService<VersionControlServer>();
+
             m_ArtifactProvider = m_VcServer.ArtifactProvider;
 
             //used for errors
@@ -198,7 +197,7 @@ namespace CHSL
         public Dictionary<int, ServerItemInformation> ExecuteQueryForPerson(string name)
         {
             //create the query
-            string query = "select * from WorkItems where [System.AssignedTo] = '" + name +
+            string query = "Select * from WorkItems Where [System.AssignedTo] = '" + name +
                            "' AND [System.ExternalLinkCount] > 0";
 
             WorkItemCollection workItems = RunQueryForWorkItems(query);

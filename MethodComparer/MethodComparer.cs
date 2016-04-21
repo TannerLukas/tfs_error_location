@@ -1,19 +1,15 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Dynamic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using ICSharpCode.NRefactory;
 using ICSharpCode.NRefactory.CSharp;
-using ICSharpCode.NRefactory.MonoCSharp;
 using ICSharpCode.NRefactory.TypeSystem;
 using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
 using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
 using ParameterModifier = ICSharpCode.NRefactory.CSharp.ParameterModifier;
 
-namespace MethodComparerison
+namespace MethodComparison
 {
     /// <summary>
     /// compares two syntaxtrees in order to find out which methods have changed.

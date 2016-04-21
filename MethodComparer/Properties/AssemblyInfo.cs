@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Tfs_Error_Location")]
+[assembly: AssemblyTitle("MethodComparer")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Licence Owner")]
-[assembly: AssemblyProduct("Tfs_Error_Location")]
+[assembly: AssemblyProduct("MethodComparer")]
 [assembly: AssemblyCopyright("Copyright © Licence Owner 2015")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

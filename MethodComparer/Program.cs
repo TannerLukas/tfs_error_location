@@ -2,49 +2,76 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MethodStatus = MethodComparerison.MethodComparisonResult.MethodStatus;
+using MethodStatus = MethodComparison.MethodComparisonResult.MethodStatus;
 
-namespace MethodComparerison
+namespace MethodComparison
 {
     class Program
     {
         private const string s_ErrorWrongUsage =
-            "Error: Wrong Usage.\r\n" + "Usage: no parameters | oldFileName newFileName";
+            "Error: Wrong Usage.\r\n" + "Usage: MethodComparer.exe oldFile newFile";
 
         private const string s_OutputSeparator = "---------------------------------\r\n";
 
-        private const string s_ExecuteExamples = "The program is executed for example files.\r\n";
+        private const int s_OldFileIndex = 0;
+        private const int s_NewFileIndex = 1;
+        private const int s_ExpectedParametersCount = 2;
 
         private static void Main(string[] args)
         {
-            string oldFileName;
-            string oldFileContent;
-            string newFileName;
-            string newFileContent;
-
-            if (!args.Any())
+            if (args.Length != s_ExpectedParametersCount)
             {
-                Console.WriteLine(s_ExecuteExamples);
-                //for now only with example files
-                oldFileName = "oldExampleFile.cs";
-                newFileName = "newExampleFile.cs";
-                FileProvider.CreateExampleFiles(out oldFileContent, out newFileContent);
-            }
-            else if (args.Count() == 2)
-            {
-                oldFileName = args[0];
-                newFileName = args[1];
-                oldFileContent = FileProvider.ReadFile(oldFileName);
-                newFileContent = FileProvider.ReadFile(newFileName);
+                Console.WriteLine(s_ErrorWrongUsage);
             }
             else
             {
-                Console.WriteLine(s_ErrorWrongUsage);
-                return;
+                string oldFile = args[s_OldFileIndex];
+                string newFile = args[s_NewFileIndex];
+
+                string oldFileContent = ReadFile(oldFile);
+                string newFileContent = ReadFile(newFile);
+
+                if (oldFileContent != null && newFileContent != null)
+                {
+                    CompareFileContents(oldFile, oldFileContent, newFile, newFileContent);
+                }
+
+            }
+        }
+
+        /// <summary>
+        /// reads the contents of a file into a string.
+        /// </summary>
+        /// <param name="fileName">contains the path to the file</param>
+        /// <returns>on success: a stream containing the contents of the file,
+        /// null otherwise</returns>
+        private static string ReadFile(
+            string fileName)
+        {
+            try
+            {
+                //check if File exists
+                if (File.Exists(fileName))
+                {
+                    using (StreamReader reader = new StreamReader(fileName))
+                    {
+                        string fileContent = reader.ReadToEnd();
+                        return fileContent;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Error: the file " + fileName + " does not exist.");
+                }
+            }
+            catch (IOException exception)
+            {
+                Console.WriteLine(exception.Message);
             }
 
-            CompareFileContents(oldFileName, oldFileContent, newFileName, newFileContent);
+            return null;
         }
+
 
         private static void CompareFileContents(
             string oldFileName, 
