@@ -531,7 +531,7 @@ namespace CHSL
                     //start with the method comparison
                     using (MemoryStream errorStream = new MemoryStream())
                     {
-                        MethodComparisonResult methodComparison = MethodComparer.CompareSyntaxTrees
+                        MethodComparisonResult methodComparison = MethodComparer.CompareMethods
                             (oldFileContent, serverItem.FileName, newFileContent,
                                 serverItem.FileName, errorStream);
 

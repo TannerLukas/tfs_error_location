@@ -88,7 +88,7 @@ namespace MethodComparison
 
             using (MemoryStream errorLogStream = new MemoryStream())
             {
-                MethodComparisonResult methodComparisonResult = MethodComparer.CompareSyntaxTrees
+                MethodComparisonResult methodComparisonResult = MethodComparer.CompareMethods
                     (oldFileContent, oldFileName, newFileContent, newFileName, errorLogStream);
 
                 if (methodComparisonResult != null)

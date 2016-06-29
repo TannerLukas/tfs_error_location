@@ -38,6 +38,8 @@ namespace CHSL
         private const string s_CsvExtension = ".csv";
         private const string s_TxtExtension = ".txt";
 
+        private static readonly string s_Newline = Environment.NewLine;
+
         //column definitions which are used in the report file
         private const string s_ServerItemColumn = "FileName";
         private const string s_NamespaceColumn = "Namespace";
@@ -412,19 +414,21 @@ namespace CHSL
         /// <param name="result"></param>
         private static void PrintReport(Dictionary<int, ServerItemInformation> result)
         {
+            //retrieve all serverItems
+            IEnumerable<ServerItemInformation> serverItems = result.Values;
+
+            //retrieve all serverItems which were processed successfully
+            IEnumerable<ServerItemInformation> correctItems = serverItems.Where
+                (s => (s.AggregatedResult != null && !s.Errors.Any()));
+
+            //retrieve and print all serverItems which were processed with errors
+            IEnumerable<ServerItemInformation> errorItems = serverItems.Except(correctItems);
+
+            Console.WriteLine(s_Newline + s_Newline);
+            PrintErrorItems(errorItems);
+
             using (StreamWriter writer = new StreamWriter(s_ReportFile, false))
             {
-                //retrieve all serverItems
-                IEnumerable<ServerItemInformation> serverItems = result.Values;
-
-                //retrieve all serverItems which were processed successfully
-                IEnumerable<ServerItemInformation> correctItems = serverItems.Where
-                    (s => (s.AggregatedResult != null && !s.Errors.Any()));
-
-                //retrieve and print all serverItems which were processed with errors
-                IEnumerable<ServerItemInformation> errorItems = serverItems.Except(correctItems);
-                PrintErrorItems(errorItems);
-
                 PrintCorrectItems(correctItems, writer);
             }
         }
@@ -510,7 +514,7 @@ namespace CHSL
             }
 
             string fullPath = ((FileStream)(writer.BaseStream)).Name;
-            Console.WriteLine("\r\nA Report was successfully written to: " + fullPath);
+            Console.WriteLine("A Report was successfully written to: " + fullPath);
         }
 
         /// <summary>
@@ -521,11 +525,11 @@ namespace CHSL
         {
             if (items.Any())
             {
-                Console.WriteLine("\r\n\r\nERRORS in ServerItems: ");
+                Console.WriteLine("ERRORS in ServerItems: ");
 
                 foreach (ServerItemInformation item in items)
                 {
-                    Console.WriteLine("  # " + item.FileName);
+                    Console.Write(item.GetErrorReport());
                 }
             }
         }
@@ -536,7 +540,8 @@ namespace CHSL
         /// <param name="exception">the exception which occurred</param>
         private static void HandleException(Exception exception)
         {
-            Console.WriteLine("\r\nAn Error occurred: " + exception.Message);
+            Console.WriteLine(s_Newline);
+            Console.WriteLine("An Error occurred: " + exception.Message);
             Exit(ExitCode.NotOk);
         }
 

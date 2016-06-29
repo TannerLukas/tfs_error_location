@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using ICSharpCode.NRefactory;
@@ -47,7 +48,7 @@ namespace MethodComparison
         /// If it is true, all comments are ignored.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
         /// and a list of their corresponding methods as values, null otherwise</returns>
-        public static MethodComparisonResult CompareSyntaxTrees(
+        public static MethodComparisonResult CompareMethods(
             string oldFileContent,
             string oldFileName,
             string newFileContent,
@@ -76,6 +77,8 @@ namespace MethodComparison
             //renaming is not handled yet
             List<Method> addedMethods;
             List<Method> deletedMethods;
+
+
             Dictionary<Method, Method> methodMapping = CreateMethodMapping
                 (oldMethods, newMethods, out addedMethods, out deletedMethods);
 
@@ -87,6 +90,7 @@ namespace MethodComparison
             result.AddDeletedMethods(deletedMethods);
 
             return result;
+
         }
 
         /// <summary>
@@ -292,7 +296,7 @@ namespace MethodComparison
         {
             Dictionary<Method, Method> methodMapping = new Dictionary<Method, Method>();
             deletedMethods = new List<Method>();
-            List<Method> newMethodsList = newMethods.ToList();
+            List<Method> newMethodsList = newMethods.ToList();   
 
             foreach (Method oldMethod in oldMethods)
             {
@@ -313,7 +317,7 @@ namespace MethodComparison
             }
 
             //find all methods which were added in the new file
-            addedMethods = FindAllNewMethodDeclarations(methodMapping.Values, newMethodsList);
+            addedMethods = FindAllNewMethodDeclarations(methodMapping.Values, newMethodsList);           
 
             return methodMapping;
         }
@@ -611,8 +615,7 @@ namespace MethodComparison
                 foreach (Error error in errors)
                 {
                     errorLogWriter.WriteLine
-                        ("Error occured in File {0} in Line {1} : {2}.", tree.FileName,
-                            error.Region.BeginLine, error.Message);
+                        ("Error in Line {0} : {1}.", error.Region.BeginLine, error.Message);
                 }
                 errorLogWriter.Flush();
                 return false;

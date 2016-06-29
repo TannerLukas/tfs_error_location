@@ -103,6 +103,7 @@ namespace CHSL
             //if an error occurred during the loading process stop working
             if (m_ErrorOccurred)
             {
+                Console.CursorVisible = true;
                 return;
             }
 
@@ -129,6 +130,8 @@ namespace CHSL
             {
                 DrawProgressBar(m_ProgressBarComplete, m_ProgressBarMaxVal);
             }
+
+            Console.CursorVisible = true;
         }
 
         /// <summary>

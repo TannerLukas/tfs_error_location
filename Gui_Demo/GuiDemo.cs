@@ -28,7 +28,7 @@ namespace Gui_Demo
             MethodComparisonResult methodComparisonResult;
             using (MemoryStream errorLogStream = new MemoryStream())
             {
-                methodComparisonResult = MethodComparer.CompareSyntaxTrees
+                methodComparisonResult = MethodComparer.CompareMethods
                     (oldText, "oldExampleFile.cs", newText, "newExampleFile.cs", errorLogStream);
 
                 if (methodComparisonResult == null)
@@ -40,8 +40,6 @@ namespace Gui_Demo
                     return;
                 }
             }
-
-
 
             trView.Enabled = true;
             CreateTreeViewOutput(methodComparisonResult);
