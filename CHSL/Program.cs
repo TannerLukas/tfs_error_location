@@ -52,6 +52,7 @@ namespace CHSL
         private static QueryType s_QueryType;
         private static string s_QueryValue;
 
+        private static bool s_Verbose;
         private static string s_ReportFile;
         private static string s_IniFile;
 
@@ -119,6 +120,10 @@ namespace CHSL
                     "qstring|qs=",
                     @"QueryOption with ""{QUERYSTRING}"" for MethodComparison.",
                     v => queryString = v
+                },
+                {
+                    "verbose|v", "Option to enable verbose error report.",
+                    v => s_Verbose = true
                 },
                 {
                     "ini=|i=", "Loads the configuration from {FILE}. \nDefault =  ./config.ini",
@@ -529,7 +534,7 @@ namespace CHSL
 
                 foreach (ServerItemInformation item in items)
                 {
-                    Console.Write(item.GetErrorReport());
+                    Console.Write(item.GetErrorReport(s_Verbose));
                 }
             }
         }

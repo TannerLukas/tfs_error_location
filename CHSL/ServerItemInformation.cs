@@ -108,28 +108,33 @@ namespace CHSL
             }
         }
 
-        public string GetErrorReport()
+        public string GetErrorReport(bool verbose)
         {
+            string report = String.Empty;
             string newline = Environment.NewLine;
 
-            string report = String.Empty;
-
-            if (Errors != null && Errors.Count > 0)
+            if (Errors != null &&
+                Errors.Count > 0)
             {
                 report = "# " + FileName + newline;
 
-                foreach (KeyValuePair<int, string> pair in Errors)
+                if (verbose)
                 {
-                    //the value contains all errors 
-                    report += "  In Changeset " + pair.Key + " : " + newline;
-
-                    string[] errorLines = pair.Value.Split(newline.ToCharArray());
-
-                    foreach (var errorLine in errorLines)
+                    foreach (KeyValuePair<int, string> pair in Errors)
                     {
-                        report += "  " + errorLine + newline;
+                        //the value contains all errors 
+                        report += "  In Changeset " + pair.Key + " : " + newline;
+
+                        string[] errorLines = pair.Value.Split(newline.ToCharArray());
+
+                        foreach (var errorLine in errorLines)
+                        {
+                            report += "  " + errorLine + newline;
+                        }
                     }
                 }
+
+                report += newline;
             }
 
             return report;
