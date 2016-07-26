@@ -38,6 +38,8 @@ namespace CHSL
         private readonly ConsoleProgressBar m_ConsoleProgressBar;
         private readonly bool m_ShowProgressBar;
 
+        private int m_ProcessedChangesets;
+
         public TfsServiceProvider(
             TfsConfiguration config,
             ConsoleProgressBar progressBar,
@@ -64,33 +66,11 @@ namespace CHSL
 
             m_ArtifactProvider = m_VcServer.ArtifactProvider;
 
+            m_ProcessedChangesets = 0;
+
             //used for errors
             m_ErrorLogStream = new MemoryStream();
             m_ErrorLogWriter = new StreamWriter(m_ErrorLogStream) {AutoFlush = true};
-        }
-
-        /// <summary>
-        /// extracts the tfs configuration from the config parameter which should be used     
-        /// </summary>
-        /// <param name="config">contains the tfsConfiguration which should be used</param>
-        /// <returns>a string containing the definition of the teamProjectCollection</returns>
-        private static string GetTfsConfigurationInformation(TfsConfiguration config)
-        {
-            string seperatorChar = Path.AltDirectorySeparatorChar + String.Empty;
-            string server = config.Server;
-            string project = config.Project;
-
-            string teamProjectCollection;
-            if (config.Server.EndsWith(seperatorChar))
-            {
-                teamProjectCollection = server + project;
-            }
-            else
-            {
-                teamProjectCollection = server + seperatorChar + project;
-            }
-
-            return teamProjectCollection;
         }
 
         /// <summary>
@@ -98,7 +78,8 @@ namespace CHSL
         /// </summary>
         /// <param name="changesetId">specifies which changeset should be analyzed</param>
         /// <returns>a Dictionary which contains all ServerItemInformations <see cref="m_ServerItems"/></returns>
-        public Dictionary<int, ServerItemInformation> ExecuteChangesetRequest(int changesetId)
+        public Dictionary<int, ServerItemInformation> ExecuteChangesetRequest(
+            int changesetId)
         {
             try
             {
@@ -113,6 +94,8 @@ namespace CHSL
                 AnalyzeChangesOfChangeset(changesetId, changeset.Changes, true);
 
                 UpdateProgressBar(changeset.Changes.Count());
+
+                m_ProcessedChangesets = 1;
             }
             catch (VersionControlException exception)
             {
@@ -131,7 +114,8 @@ namespace CHSL
         /// <param name="workItemId">specifies which workitem should be analyzed</param>
         /// <returns>on success: a Dictionary which contains all ServerItemInformations, 
         /// null otherwise <see cref="m_ServerItems"/></returns>
-        public Dictionary<int, ServerItemInformation> ExecuteWorkItemRequest(int workItemId)
+        public Dictionary<int, ServerItemInformation> ExecuteWorkItemRequest(
+            int workItemId)
         {
             WorkItem workItem = m_WorkItemStore.GetWorkItem(workItemId);
             IEnumerable<Changeset> linkedChangesets = GetAllChangesetsOfWorkItem(workItem);
@@ -140,7 +124,7 @@ namespace CHSL
             {
                 int changesAmount = linkedChangesets.Sum(c => c.Changes.Count());
 
-                //init hte 
+                //init the progress bar
                 int changesetCounter = linkedChangesets.Count();
                 string message = String.Format
                     ("Start to work on {0} changesets with {1} changes.", changesetCounter,
@@ -155,6 +139,7 @@ namespace CHSL
                     UpdateProgressBar(changeCounter);
                 }
 
+                m_ProcessedChangesets = changesetCounter;
                 return m_ServerItems;
             }
             else
@@ -171,7 +156,8 @@ namespace CHSL
         /// <param name="text">contains the text of a query (select ...)</param>
         /// <returns>on success: a Dictionary which contains all ServerItemInformations, 
         /// null otherwise <see cref="m_ServerItems"/></returns>
-        public Dictionary<int, ServerItemInformation> ExecuteQueryString(string text)
+        public Dictionary<int, ServerItemInformation> ExecuteQueryString(
+            string text)
         {
             WorkItemCollection workItems = RunQueryForWorkItems(text);
 
@@ -194,7 +180,8 @@ namespace CHSL
         /// <param name="name">the name of the person</param>
         /// <returns>on success: a Dictionary which contains all ServerItemInformations, 
         /// null otherwise <see cref="m_ServerItems"/></returns>
-        public Dictionary<int, ServerItemInformation> ExecuteQueryForPerson(string name)
+        public Dictionary<int, ServerItemInformation> ExecuteQueryForPerson(
+            string name)
         {
             //create the query
             string query = "Select * from WorkItems Where [System.AssignedTo] = '" + name +
@@ -224,7 +211,8 @@ namespace CHSL
         /// but it also works with "My Tasks"</param>
         /// <returns>on success: a Dictionary which contains all ServerItemInformations, 
         /// null otherwise <see cref="m_ServerItems"/></returns>
-        public Dictionary<int, ServerItemInformation> ExecuteQueryByName(string queryPath)
+        public Dictionary<int, ServerItemInformation> ExecuteQueryByName(
+            string queryPath)
         {
             //split the queryPath in all path tokens
             string[] pathTokens = queryPath.Split
@@ -250,7 +238,7 @@ namespace CHSL
             //traverse through the folders and find the query
             QueryDefinition query = FindQueryByPathComparison(hierarchy, queryPath);
              * */
-             
+
             QueryDefinition query = FindQueryByFolderStructure(filteredPathTokens);
 
             if (query == null)
@@ -296,11 +284,21 @@ namespace CHSL
             return m_ServerItems;
         }
 
+        public void PrintReport()
+        {
+            PrintErrorReport();
+
+            Console.Write
+                ("\r\n\r\nCHSL processed {0} ServerItems in {1} Changesets.", m_ServerItems.Count,
+                    m_ProcessedChangesets);
+        }
+
         /// <summary>
-        /// prints the errors to the console
+        /// Prints the error report to the console.
         /// </summary>
         public void PrintErrorReport()
         {
+            //print errors
             using (StreamReader reader = new StreamReader(m_ErrorLogStream))
             {
                 m_ErrorLogStream.Position = 0;
@@ -315,10 +313,36 @@ namespace CHSL
         }
 
         /// <summary>
+        /// extracts the tfs configuration from the config parameter which should be used     
+        /// </summary>
+        /// <param name="config">contains the tfsConfiguration which should be used</param>
+        /// <returns>a string containing the definition of the teamProjectCollection</returns>
+        private static string GetTfsConfigurationInformation(
+            TfsConfiguration config)
+        {
+            string seperatorChar = Path.AltDirectorySeparatorChar + String.Empty;
+            string server = config.Server;
+            string project = config.Project;
+
+            string teamProjectCollection;
+            if (config.Server.EndsWith(seperatorChar))
+            {
+                teamProjectCollection = server + project;
+            }
+            else
+            {
+                teamProjectCollection = server + seperatorChar + project;
+            }
+
+            return teamProjectCollection;
+        }
+
+        /// <summary>
         /// analyzes all changesets which are linked to a workItem in the collection.
         /// </summary>
         /// <param name="workItems">contains all workItems</param>
-        private void AnalyzeWorkItems(ref WorkItemCollection workItems)
+        private void AnalyzeWorkItems(
+            ref WorkItemCollection workItems)
         {
             List<int> processedChangesets = new List<int>();
 
@@ -345,9 +369,12 @@ namespace CHSL
 
                 UpdateProgressBar();
             }
+
+            m_ProcessedChangesets = processedChangesets.Count;
         }
 
-        private QueryDefinition FindQueryByFolderStructure(IEnumerable<string> pathTokens)
+        private QueryDefinition FindQueryByFolderStructure(
+            IEnumerable<string> pathTokens)
         {
             string project = pathTokens.First();
             Project teamProject = m_WorkItemStore.Projects[project];
@@ -456,7 +483,8 @@ namespace CHSL
         /// </summary>
         /// <param name="item">contains the workItem information</param>
         /// <returns>a list of all associated changesets of a workitem</returns>
-        private List<Changeset> GetAllChangesetsOfWorkItem(WorkItem item)
+        private List<Changeset> GetAllChangesetsOfWorkItem(
+            WorkItem item)
         {
             List<Changeset> result = new List<Changeset>();
 
@@ -645,7 +673,8 @@ namespace CHSL
         /// </summary>
         /// <param name="item">the item which should be downloaded</param>
         /// <returns>the contents of the item as a string</returns>
-        private static string GetFileString(Item item)
+        private static string GetFileString(
+            Item item)
         {
             // Setup string container
             string content;
@@ -673,23 +702,12 @@ namespace CHSL
         }
 
         /// <summary>
-        /// converts a workItemCollection to a list.
-        /// </summary>
-        /// <param name="collection">the collection which should be converted</param>
-        /// <returns>a list of all workItems in the workItemCollection</returns>
-        private List<WorkItem> ConvertWorkItemCollectionToList(ref WorkItemCollection collection)
-        {
-            List<WorkItem> itemsList = (from WorkItem item in collection select item).ToList();
-
-            return itemsList;
-        }
-
-        /// <summary>
         /// runs the query defined by text againts the WorkItemStore
         /// </summary>
         /// <param name="text">contains the text of the query which should be executed.</param>
         /// <returns>a collection of workitems which are returned by the query</returns>
-        private WorkItemCollection RunQueryForWorkItems(string text)
+        private WorkItemCollection RunQueryForWorkItems(
+            string text)
         {
             return m_WorkItemStore.Query(text);
         }
@@ -714,7 +732,8 @@ namespace CHSL
         /// updates the value of the progress bar
         /// </summary>
         /// <param name="value">optional: the value to which the progress bar should be set</param>
-        private void UpdateProgressBar(int value = 0)
+        private void UpdateProgressBar(
+            int value = 0)
         {
             if (m_ShowProgressBar && m_ConsoleProgressBar != null)
             {

@@ -406,7 +406,7 @@ namespace CHSL
             }
 
             StopProgressThread(false);
-            tfsService.PrintErrorReport();
+            tfsService.PrintReport();
 
             return result;
         }
