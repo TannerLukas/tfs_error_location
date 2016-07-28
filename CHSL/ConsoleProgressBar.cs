@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 
 namespace CHSL
@@ -146,7 +143,17 @@ namespace CHSL
             Console.CursorVisible = false;
             int cursorPosition = Console.CursorLeft;
 
-            double percentage = complete/(double)maxVal;
+            double percentage;
+
+            if (maxVal == 0)
+            {
+                percentage = 1;
+            }
+            else
+            {
+                percentage = complete / (double)maxVal;
+            }
+
             int chars = (int) Math.Floor(percentage/(1 / (double)m_ProgressBarSize));
 
             string progress = String.Empty;

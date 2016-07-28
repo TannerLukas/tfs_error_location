@@ -4,8 +4,8 @@ CHSL is a TFS change history analysis tool. CHSL's basic idea is to calculate wh
 Identification of changed methods works by comparing their corresponding abstract syntax trees (ASTs). Various TFS analysis options ranging from analysing a single changeset to
 a self defined TFS query are provided.
 
-**Dependencies:**
- - NRefactory 5.5.1
+**Dependencies (already contained in packages folder):**
+ - Roslyn (Replaced NRefactory 5.5.1)
  - TFS 2010 API
 
 **How to use**

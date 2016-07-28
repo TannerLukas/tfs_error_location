@@ -48,7 +48,8 @@ namespace Gui_Demo
             txtNew.ScrollToCaret();
         }
 
-        private void CreateTreeViewOutput(MethodComparisonResult methodComparisonResult)
+        private void CreateTreeViewOutput(
+            MethodComparisonResult methodComparisonResult)
         {
             //for each method status: get the list of methods which belong to that status
             Dictionary<MethodComparisonResult.MethodStatus, List<Method>> statusResult =
@@ -63,9 +64,10 @@ namespace Gui_Demo
                 {
                     List<TreeNode> changedNodes = new List<TreeNode>();
 
-                    if (method.ChangeEntryLocation.HasValue)
+                    if (method.ChangeEntryLocation != null)
                     {
-                        changedNodes.Add(new TreeNode("Change Entry Point") { Tag = method.ChangeEntryLocation.Value });
+                        changedNodes.Add
+                            (new TreeNode("Change Entry Point") {Tag = method.ChangeEntryLocation});
                     }
 
                     TreeNode node = new TreeNode(method.FullyQualifiedName, changedNodes.ToArray())

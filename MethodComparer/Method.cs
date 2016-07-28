@@ -1,34 +1,33 @@
 ﻿using System;
 using System.Text.RegularExpressions;
-using ICSharpCode.NRefactory;
-using ICSharpCode.NRefactory.CSharp;
+using Microsoft.CodeAnalysis;
 
 namespace MethodComparison
 {
     /// <summary>
-    /// Contains several properties for a methodDeclaration.
+    /// Contains several properties for a method of type method/constructor/property.
     /// </summary>
     public class Method
     {
         private const int s_ParameterRegexValueIndex = 1;
 
         public Method(
-            TextLocation startLocation,
-            TextLocation signatureLocation,
+            Location startLocation,
             string namespaceName,
             string typeName,
             string methodName,
-            char seperator,
-            string signature)
+            string seperator,
+            string signature,
+            MethodComparer.MethodType type)
         {
             StartLocation = startLocation;
-            SignatureLocation = signatureLocation;
             TypeName = typeName;
             MethodName = methodName;
             NamespaceName = namespaceName;
             FullyQualifiedName = CreateFullyQualifiedMethodName
                 (methodName, typeName, namespaceName, seperator);
             Signature = signature;
+            MethodType = type;
         }
 
         /// <summary>
@@ -77,7 +76,7 @@ namespace MethodComparison
         /// compared to the previous version was found. if no change was
         /// found the value equals null.
         /// </summary>
-        public Nullable<TextLocation> ChangeEntryLocation
+        public Location ChangeEntryLocation
         {
             get;
             private set;
@@ -97,16 +96,16 @@ namespace MethodComparison
         /// <summary>
         /// defines the position where the method declaration starts.
         /// </summary>
-        public TextLocation StartLocation
+        public Location StartLocation
         {
             get;
             private set;
         }
 
         /// <summary>
-        /// defines the position where the signature of the method declaration starts.
+        /// defines the type of the method (method, property or constructor)
         /// </summary>
-        public TextLocation SignatureLocation
+        public MethodComparer.MethodType MethodType
         {
             get;
             private set;
@@ -116,9 +115,9 @@ namespace MethodComparison
         /// sets the changeEntryLocation based on the startlocation in the astNode
         /// </summary>
         /// <param name="change">contains the node which was changed</param>
-        public void SetChangeEntryLocation(AstNode change)
+        public void SetChangeEntryLocation(SyntaxNodeOrToken change)
         {
-            ChangeEntryLocation = change.StartLocation;
+            ChangeEntryLocation = change.GetLocation();
         }
 
         /// <summary>
@@ -147,7 +146,7 @@ namespace MethodComparison
             string methodName,
             string typeName,
             string namespaceName,
-            char seperator)
+            string seperator)
         {
             string name = typeName + seperator + methodName;
             if (!namespaceName.Equals(String.Empty))
@@ -157,5 +156,7 @@ namespace MethodComparison
 
             return name;
         }
+
+        
     }
 }

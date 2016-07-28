@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Microsoft.TeamFoundation;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.TeamFoundation.VersionControl.Client;
@@ -347,7 +348,7 @@ namespace CHSL
             List<int> processedChangesets = new List<int>();
 
             int workItemCounter = workItems.Count;
-            string message = String.Format("Start to work on {0} workitems.", workItemCounter);
+            string message = $"Start to work on {workItemCounter} workitems.";
             InitProgressBar(workItemCounter, message);
 
             foreach (WorkItem item in workItems)
@@ -688,9 +689,10 @@ namespace CHSL
                     stream.CopyTo(memoryStream);
 
                     // Use StreamReader to read MemoryStream created from byte array
+                    //default encoding is necessary as some code files use some unicode characters
                     using (
                         StreamReader streamReader = new StreamReader
-                            (new MemoryStream(memoryStream.ToArray())))
+                            (new MemoryStream(memoryStream.ToArray()), Encoding.Default))
                     {
                         content = streamReader.ReadToEnd();
                     }

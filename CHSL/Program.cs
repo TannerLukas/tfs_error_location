@@ -333,9 +333,8 @@ namespace CHSL
         }
 
         /// <summary>
-        /// stops the progressBar thread and prints a
+        /// stops the progressBar thread
         /// </summary>
-        /// <param name="message">an message which is printed after the thread has finished</param>
         /// <param name="errorOccured">a flag which indicates if an error occurred</param>
         private static void StopProgressThread(
             bool errorOccured)
@@ -422,13 +421,13 @@ namespace CHSL
             //retrieve all serverItems
             IEnumerable<ServerItemInformation> serverItems = result.Values;
 
-            //retrieve all serverItems which were processed successfully
+            //retrieve all serverItems which where processed in at least a single changeset
             IEnumerable<ServerItemInformation> correctItems = serverItems.Where
-                (s => (s.AggregatedResult != null && !s.Errors.Any()));
+                (s => s.AggregatedResult != null && s.Changesets.Count > 0);
 
             //retrieve and print all serverItems which were processed with errors
-            IEnumerable<ServerItemInformation> errorItems = serverItems.Except(correctItems);
-
+            IEnumerable<ServerItemInformation> errorItems = serverItems.Where(s => s.Errors.Any());
+                
             Console.WriteLine(s_Newline + s_Newline);
             PrintErrorItems(errorItems);
 

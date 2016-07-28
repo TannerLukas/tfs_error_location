@@ -2,22 +2,23 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
-using ICSharpCode.NRefactory;
 using MethodComparison;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Gui_Demo
 {
     /// <summary>
-    /// selects texts in a textbox which contains the code of a c# file.
+    /// Selects text in a textbox which contains the code of a C# file.
     /// Three Options:
-    /// 1) Selected all methods from a status
+    /// 1) Select all methods from a status
     /// 2) Select a single method
     /// 3) Select the change entry point in a method which was changed.
     /// </summary>
     internal class TextSelector
     {
         /// <summary>
-        /// selects text in a textBox. the textbox in which the selection should 
+        /// Selects text in a textBox. The textbox in which the selection should 
         /// be made depends on the selected node in the treeView.
         /// </summary>
         /// <param name="trView">the treeView from which the selection is triggered</param>
@@ -100,7 +101,7 @@ namespace Gui_Demo
 
             foreach (Method method in methods)
             {
-                SelectAstNode(searchBox, method.SignatureLocation);
+                SelectSyntaxNode(searchBox, method.StartLocation);
             }
 
             searchBox.ScrollToCaret();
@@ -127,7 +128,7 @@ namespace Gui_Demo
 
             Method method = (Method)node.Tag;
 
-            SelectAstNode(searchBox, method.SignatureLocation);
+            SelectSyntaxNode(searchBox, method.StartLocation);
             searchBox.ScrollToCaret();
         }
 
@@ -149,32 +150,23 @@ namespace Gui_Demo
             //just to be sure everything is deselected
             DeSelectTextBox(searchBox);
 
-            TextLocation changeLocation = (TextLocation)node.Tag;
+            Location changeLocation = (Location)node.Tag;
 
-            SelectAstNode(searchBox, changeLocation);
+            SelectSyntaxNode(searchBox, changeLocation);
             searchBox.ScrollToCaret();
         }
 
         /// <summary>
-        /// selects the given astNode in the searchBox
+        /// Selects the given SyntaxNode in the searchBox.
         /// </summary>
         /// <param name="searchBox">the textbox in which something should be highlighted</param>
         /// <param name="startLocation">defines where the highlighting should start</param>
-        private static void SelectAstNode(
+        private static void SelectSyntaxNode(
             RichTextBox searchBox,
-            TextLocation startLocation)
+            Location startLocation)
         {
-            string[] lines = GetLinesFromTextBox(searchBox);
-
-            //the methodDeclaration contains a TextLocation Property from
-            //which the exact positon int the textbox could be deduced
-            int startLine = startLocation.Line;
-            int startColumn = startLocation.Column;
-
-            int startIndex = CalculateSelectionStart(lines, startLine, startColumn);
-            int selectionLength = lines[startLine - 1].Length - startColumn + 1;
-
-            SelectText(searchBox, startIndex, selectionLength);
+            TextSpan span = startLocation.SourceSpan;
+            SelectText(searchBox, span.Start, span.Length);
         }
 
         /// <summary>
@@ -191,43 +183,6 @@ namespace Gui_Demo
             searchBox.Select(startIndex, selectionLength);
             searchBox.HideSelection = true;
             searchBox.SelectionBackColor = Color.Yellow;
-        }
-
-        /// <summary>
-        /// calculates where the highlighting in a textbox should start
-        /// </summary>
-        /// <param name="lines">the contents of the textbox</param>
-        /// <param name="startLine">the lineNumber where the hightlighting
-        /// should start</param>
-        /// <param name="startColumn">the startColumn where the hightlighting
-        /// should start</param>
-        /// <returns>the index in the textbox where the hightlighting
-        /// should start</returns>
-        private static int CalculateSelectionStart(
-            string[] lines,
-            int startLine,
-            int startColumn)
-        {
-            string textSoFar = "";
-
-            for (int i = 0; i < startLine - 1; i++)
-            {
-                textSoFar += lines[i] + "\n";
-            }
-
-            int startIndex = textSoFar.Length + startColumn - 1;
-
-            return startIndex;
-        }
-
-        /// <summary>
-        /// splits the content of a textbox in lines
-        /// </summary>
-        /// <param name="searchBox">the textbox from which the content should be splitted</param>
-        /// <returns>returns the content of a textbox splitted in lines</returns>
-        private static string[] GetLinesFromTextBox(RichTextBox searchBox)
-        {
-            return (searchBox.Text.Split('\n'));
         }
 
         /// <summary>

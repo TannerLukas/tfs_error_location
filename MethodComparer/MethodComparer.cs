@@ -1,14 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using ICSharpCode.NRefactory;
-using ICSharpCode.NRefactory.CSharp;
-using ICSharpCode.NRefactory.TypeSystem;
-using CSharpParser = ICSharpCode.NRefactory.CSharp.CSharpParser;
-using Modifiers = ICSharpCode.NRefactory.CSharp.Modifiers;
-using ParameterModifier = ICSharpCode.NRefactory.CSharp.ParameterModifier;
+using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
 
 namespace MethodComparison
 {
@@ -28,7 +26,17 @@ namespace MethodComparison
             Deleted
         }
 
-        public const char s_NameSeperator = '.';
+        /// <summary>
+        /// An Enum which defines all possible types of the analyzed methods.
+        /// </summary>
+        public enum MethodType
+        {
+            Method,
+            Constructor,
+            Property
+        }
+
+        public const string s_NameSeperator = ".";
 
         /// <summary>
         /// Compares two syntax trees:
@@ -43,9 +51,6 @@ namespace MethodComparison
         /// <param name="newFileContent">the content of the new file</param>
         /// <param name="newFileName">the fileName of the new file</param>
         /// <param name="errorLogStream">is the stream to which the errors should be written</param>
-        /// <param name="ignoreComments">a flag which indicates if changes to comments 
-        /// should also be taken into account when changes of a method are calculated.
-        /// If it is true, all comments are ignored.</param>
         /// <returns>on success: a dictionary containing the possible states of methods as keys,
         /// and a list of their corresponding methods as values, null otherwise</returns>
         public static MethodComparisonResult CompareMethods(
@@ -53,14 +58,13 @@ namespace MethodComparison
             string oldFileName,
             string newFileContent,
             string newFileName,
-            MemoryStream errorLogStream,
-            bool ignoreComments = true)
+            MemoryStream errorLogStream)
         {
             //retrieve the syntaxTrees for the old and the new file
             SyntaxTree oldTree = GetSyntaxTree(oldFileContent, oldFileName);
             SyntaxTree newTree = GetSyntaxTree(newFileContent, newFileName);
 
-            StreamWriter errorLogWriter = new StreamWriter(errorLogStream);
+            StreamWriter errorLogWriter = new StreamWriter(errorLogStream) {AutoFlush = true};
 
             if (!CheckSyntaxTrees(oldTree, newTree, errorLogWriter))
             {
@@ -68,8 +72,8 @@ namespace MethodComparison
             }
 
             //get all methods for both files
-            IEnumerable<Method> oldMethods = GetAllMethodDeclarations(oldTree);
-            IEnumerable<Method> newMethods = GetAllMethodDeclarations(newTree);
+            IEnumerable<Method> oldMethods = GetAllMethods(oldTree);
+            IEnumerable<Method> newMethods = GetAllMethods(newTree);
 
             //create a methodMapping
             //this is needed because we need to know which methods should be compared
@@ -78,19 +82,16 @@ namespace MethodComparison
             List<Method> addedMethods;
             List<Method> deletedMethods;
 
-
             Dictionary<Method, Method> methodMapping = CreateMethodMapping
                 (oldMethods, newMethods, out addedMethods, out deletedMethods);
 
-            MethodComparisonResult result = CompareMatchedMethods
-                (oldTree, newTree, methodMapping, ignoreComments);
+            MethodComparisonResult result = CompareMatchedMethods(oldTree, newTree, methodMapping);
 
             //add the added and deleted Method with their corresponding status to result
             result.AddAddedMethods(addedMethods);
             result.AddDeletedMethods(deletedMethods);
 
             return result;
-
         }
 
         /// <summary>
@@ -106,14 +107,17 @@ namespace MethodComparison
             string methodName = oldMethod.FullyQualifiedName;
 
             List<Method> possibleMethods =
-                newMethods.Where(m => m.FullyQualifiedName.Equals(methodName)).ToList();
+                newMethods.Where
+                    (m =>
+                        m.FullyQualifiedName.Equals(methodName) &&
+                        m.MethodType == oldMethod.MethodType).ToList();
 
-            if (possibleMethods.Count() == 1)
+            if (possibleMethods.Count == 1)
             {
                 //exactly one method with this name exists
                 return possibleMethods.First();
             }
-            else if (possibleMethods.Count() > 1)
+            else if (possibleMethods.Count > 1)
             {
                 //compare the complete Signature (and parameters)
                 string methodSignature = oldMethod.Signature;
@@ -121,7 +125,7 @@ namespace MethodComparison
                 List<Method> signatureMethods =
                     possibleMethods.Where(m => m.Signature.Equals(methodSignature)).ToList();
 
-                if (signatureMethods.Count() == 1)
+                if (signatureMethods.Count == 1)
                 {
                     return signatureMethods.First();
                 }
@@ -140,64 +144,85 @@ namespace MethodComparison
             string code,
             string fileName)
         {
-            SyntaxTree tree = new CSharpParser().Parse(code, fileName);
-
+            SyntaxTree tree = CSharpSyntaxTree.ParseText(code, CSharpParseOptions.Default, fileName);
             return tree;
         }
 
         /// <summary>
-        /// retrieves all entityDeclarations (method, con/destructors, properties) from the given SyntaxTree.
-        /// for each entityDeclaration a Method object with its properties is created.
+        /// Retrieves all memberDeclarations (method, constructors, properties) from the given SyntaxTree.
+        /// For each memberDeclaration a Method object with its properties is created.
         /// </summary>
-        /// <param name="tree">the tree from which the methods should be retrieved</param>
-        /// <returns>a list of all methods in a SyntaxTree</returns>
-        private static IEnumerable<Method> GetAllMethodDeclarations(SyntaxTree tree)
+        /// <param name="tree">The syntaxtree of the parsed C# file.</param>
+        /// <returns>A list of all methods in a SyntaxTree</returns>
+        private static IEnumerable<Method> GetAllMethods(
+            SyntaxTree tree)
         {
-            IEnumerable<EntityDeclaration> allMethods = GetAllEntityDeclarations(tree);
+            SyntaxNode root = tree.GetRoot();
 
-            List<Method> methods = new List<Method>();
+            IEnumerable<MemberDeclarationSyntax> methods =
+                GetAllDescendantsByType<MethodDeclarationSyntax>(root);
 
-            foreach (EntityDeclaration method in allMethods)
+            IEnumerable<MemberDeclarationSyntax> constructors =
+                GetAllDescendantsByType<ConstructorDeclarationSyntax>(root);
+
+            IEnumerable<MemberDeclarationSyntax> properties =
+                GetAllDescendantsByType<PropertyDeclarationSyntax>(root);
+
+            return CreateAllMethods(methods, constructors, properties);
+        }
+
+        /// <summary>
+        /// Creates for each method, constructor and property that have been obtained from the
+        /// SyntaxTree a corresponding method object.
+        /// </summary>
+        /// <param name="methods">A list which contains all MethodDeclarations of the underlying SyntaxTree.</param>
+        /// <param name="constructors">A list which contains all ContstructorDeclarations of the underlying SyntaxTree.</param>
+        /// <param name="properties">A list which contains all PropertyDeclarations of the underlying SyntaxTree.</param>
+        /// <returns>A list of all newly created method objects.</returns>
+        private static IEnumerable<Method> CreateAllMethods(
+            IEnumerable<MemberDeclarationSyntax> methods,
+            IEnumerable<MemberDeclarationSyntax> constructors,
+            IEnumerable<MemberDeclarationSyntax> properties)
+        {
+            IEnumerable<Method> newMethods = CreateMethodsForType(methods, MethodType.Method);
+            IEnumerable<Method> newConstructors = CreateMethodsForType
+                (constructors, MethodType.Constructor);
+            IEnumerable<Method> newProperties = CreateMethodsForType
+                (properties, MethodType.Property);
+
+            return ConcatenateIEnumerable(newMethods, newConstructors, newProperties);
+        }
+
+        /// <summary>
+        /// Creates the corresponding method objects for the given type.
+        /// </summary>
+        /// <param name="methods">A list of methods (methods, constructor, property)</param>
+        /// <param name="methodType">Defines the specific type for the new method objects.</param>
+        /// <returns>A list of all newly created method objects.</returns>
+        private static IEnumerable<Method> CreateMethodsForType(
+            IEnumerable<MemberDeclarationSyntax> methods,
+            MethodType methodType)
+        {
+            List<Method> newMethods = new List<Method>();
+
+            foreach (var method in methods)
             {
                 //retrieve the typeName and namespace in which the method is contained
                 string typeName;
                 string namespaceName;
-                GetNamespaceAndClass(method, out typeName, out namespaceName);
+                GetNamespaceAndClassName(method, out typeName, out namespaceName);
 
                 //string signature = GetMethodSignatureString(methodDeclaration);
                 string signatureWithParameters = GetMethodSignatureWithParameters(method);
 
                 //create and add the new method definition
-                methods.Add
+                newMethods.Add
                     (new Method
-                        (method.StartLocation, FindSignatureLocation(method), namespaceName,
-                            typeName, method.Name, s_NameSeperator, signatureWithParameters));
+                        (method.GetLocation(), namespaceName, typeName, GetMethodName(method),
+                            s_NameSeperator, signatureWithParameters, methodType));
             }
 
-            return methods;
-        }
-
-        /// <summary>
-        /// creates a list of all methods in the syntax tree 
-        /// (methods, constructors, destructors
-        /// </summary>
-        /// <param name="tree">the tree which should be analyzed</param>
-        /// <returns>a list of all methods in the syntax tree</returns>
-        private static IEnumerable<EntityDeclaration> GetAllEntityDeclarations(SyntaxTree tree)
-        {
-            IEnumerable<EntityDeclaration> methods = 
-                GetAllDescendantsByType<MethodDeclaration>(tree);
-            IEnumerable<EntityDeclaration> constructors =
-                GetAllDescendantsByType<ConstructorDeclaration>(tree);
-            IEnumerable<EntityDeclaration> destructors =
-                GetAllDescendantsByType<DestructorDeclaration>(tree);
-            IEnumerable<EntityDeclaration> properties =
-                GetAllDescendantsByType<PropertyDeclaration>(tree);
-
-            IEnumerable<EntityDeclaration> allMethods = ConcatenateIEnumerable
-                (methods, constructors, destructors, properties);
-
-            return allMethods;
+            return newMethods;
         }
 
         /// <summary>
@@ -206,9 +231,10 @@ namespace MethodComparison
         /// <typeparam name="T">defines the type from which all descandants should be retrieved</typeparam>
         /// <param name="node">an AstNode in a SyntaxTree</param>
         /// <returns>an IEnumerable containing all Descendants of type T in the tree</returns>
-        private static IEnumerable<T> GetAllDescendantsByType<T>(AstNode node)
+        private static IEnumerable<T> GetAllDescendantsByType<T>(
+            SyntaxNode node)
         {
-            return node.Descendants.OfType<T>();
+            return node.DescendantNodes().OfType<T>();
         }
 
         /// <summary>
@@ -217,9 +243,48 @@ namespace MethodComparison
         /// <typeparam name="T">defines the type</typeparam>
         /// <param name="lists">list of IEnumerables which should be concatenated</param>
         /// <returns>a list containing all elements of the given parameters</returns>
-        private static IEnumerable<T> ConcatenateIEnumerable<T>(params IEnumerable<T>[] lists)
+        private static IEnumerable<T> ConcatenateIEnumerable<T>(
+            params IEnumerable<T>[] lists)
         {
             return lists.SelectMany(x => x);
+        }
+
+        /// <summary>
+        /// Returns the name of the member if it is of type method/constructor/property.
+        /// </summary>
+        /// <param name="member">The member for which its name should be retrieved.</param>
+        /// <returns>On success: The name of the method, an empty string otherwise</returns>
+        private static string GetMethodName(
+            MemberDeclarationSyntax member)
+        {
+            string name = String.Empty;
+
+            //Those types have to be distinguished because their Base methods
+            //do not contain any implementation for the identifier
+
+            MethodDeclarationSyntax md = member as MethodDeclarationSyntax;
+            if (md != null)
+            {
+                name = md.Identifier.Value.ToString();
+            }
+            else
+            {
+                ConstructorDeclarationSyntax cd = member as ConstructorDeclarationSyntax;
+                if (cd != null)
+                {
+                    name = cd.Identifier.Value.ToString();
+                }
+                else
+                {
+                    PropertyDeclarationSyntax property = member as PropertyDeclarationSyntax;
+                    if (property != null)
+                    {
+                        name = property.Identifier.Value.ToString();
+                    }
+                }
+            }
+
+            return name;
         }
 
         /// <summary>
@@ -230,53 +295,63 @@ namespace MethodComparison
         /// <param name="method">the method which should be analyzed</param>
         /// <param name="typeName">the type definition of the method</param>
         /// <param name="namespaceName">the namespace definition of the method</param>
-        private static void GetNamespaceAndClass(
-            EntityDeclaration method,
+        private static void GetNamespaceAndClassName(
+            SyntaxNode method,
             out string typeName,
             out string namespaceName)
         {
-            TypeDeclaration classType = method.GetParent<TypeDeclaration>();
-            AstNode nextParent = classType.Parent;
-            
-            typeName = classType.Name;
+            List<string> typeNames = new List<string>();
+            List<string> namespaceNames = new List<string>();
 
-            namespaceName = String.Empty;
+            SyntaxNode parent = method.Parent;
 
-            Type namespaceDeclaration = typeof(NamespaceDeclaration);
-            Type typeDeclaration = typeof(TypeDeclaration);
-
-            //a class/namespace could be defined within a class/namespace
-            //therefore, the typeName and namespaceName consists of the
-            //definitions & subdefinitions the method is located in and concatenated by '.'
-            int namespaceCounter = 0;
-            while (nextParent != null)
+            while (parent != null)
             {
-                Type currentType = nextParent.GetType();
-
-                if (currentType == typeDeclaration)
+                string className = GetClassName(parent);
+                if (!className.Equals(String.Empty))
                 {
-                    typeName = ((TypeDeclaration)nextParent).Name + s_NameSeperator + typeName;
+                    typeNames.Insert(0, className);
                 }
-                else if (currentType == namespaceDeclaration)
+                else
                 {
-                    //reached the namespace declaration
-                    string currentNamespace = ((NamespaceDeclaration)nextParent).Name;
-
-                    if (namespaceCounter == 0)
+                    string namespaceString = GetNamespaceName(parent);
+                    if (!namespaceString.Equals(String.Empty))
                     {
-                        namespaceName = currentNamespace;
+                        namespaceNames.Insert(0, namespaceString);
                     }
-                    else
-                    {
-                        namespaceName = currentNamespace + s_NameSeperator +
-                                    namespaceName;
-                    }
-
-                    namespaceCounter++;
                 }
+                
+                parent = parent.Parent;
+            }
 
-                nextParent = nextParent.Parent;
-            }         
+            typeName = string.Join(s_NameSeperator, typeNames);
+            namespaceName = string.Join(s_NameSeperator, namespaceNames);
+        }
+
+        private static string GetClassName(SyntaxNode node)
+        {
+            string className = String.Empty;
+
+            TypeDeclarationSyntax typeNode = node as TypeDeclarationSyntax;
+            if (typeNode != null)
+            {
+                className = typeNode.Identifier.Value.ToString();
+            }
+
+            return className;
+        }
+
+        private static string GetNamespaceName(SyntaxNode node)
+        {
+            string namespaceName = String.Empty;
+
+            NamespaceDeclarationSyntax namespaceNode = node as NamespaceDeclarationSyntax;
+            if (namespaceNode != null)
+            {
+                namespaceName = namespaceNode.Name.NormalizeWhitespace().ToString();
+            }
+
+            return namespaceName;
         }
 
         /// <summary>
@@ -296,7 +371,7 @@ namespace MethodComparison
         {
             Dictionary<Method, Method> methodMapping = new Dictionary<Method, Method>();
             deletedMethods = new List<Method>();
-            List<Method> newMethodsList = newMethods.ToList();   
+            List<Method> newMethodsList = newMethods.ToList();
 
             foreach (Method oldMethod in oldMethods)
             {
@@ -317,7 +392,7 @@ namespace MethodComparison
             }
 
             //find all methods which were added in the new file
-            addedMethods = FindAllNewMethodDeclarations(methodMapping.Values, newMethodsList);           
+            addedMethods = FindAllNewMethodDeclarations(methodMapping.Values, newMethodsList);
 
             return methodMapping;
         }
@@ -347,22 +422,26 @@ namespace MethodComparison
             return addedMethods;
         }
 
+        private static SyntaxNode FindMethodDeclarationViaLocation(
+            SyntaxTree tree,
+            Method method)
+        {
+            return tree.GetRoot().FindNode(method.StartLocation.SourceSpan);
+        }
+
         /// <summary>
-        /// compares the methods to which a mapping was found in the following way:
-        /// traverse through the childNodes of both Methods and compare them
+        /// Compares the methods to which a mapping was found in the following way:
+        /// Traverse through the childNodes of both Methods and compare them.
         /// </summary>
-        /// <param name="oldTree">contains the SyntaxTree with the old file contents</param>
-        /// <param name="newTree">contains the SyntaxTree with the new file contents</param>
+        /// <param name="oldTree">The syntraxtree of the old file.</param>
+        /// <param name="newTree">The syntaxtree of the new file.</param>
         /// <param name="methodMapping">a mapping of the matching methods</param>
-        /// <param name="ignoreComments">indicates if comments should be taken into
-        /// account while calculating the methodcomparison result</param>
         /// <returns>a dictionary containing the changedmethods and the 
         /// methods which were not changed.</returns>
         private static MethodComparisonResult CompareMatchedMethods(
             SyntaxTree oldTree,
             SyntaxTree newTree,
-            Dictionary<Method, Method> methodMapping,
-            bool ignoreComments)
+            Dictionary<Method, Method> methodMapping)
         {
             MethodComparisonResult result = new MethodComparisonResult();
 
@@ -372,20 +451,17 @@ namespace MethodComparison
                 Method newMethod = pair.Value;
 
                 //get the corresponding methodDeclarations by accessing the via their StartLocation
-                EntityDeclaration oldDeclaration = oldTree.GetNodeAt<EntityDeclaration>
-                    (oldMethod.StartLocation);
-
-                EntityDeclaration newDeclaration = newTree.GetNodeAt<EntityDeclaration>
-                    (newMethod.StartLocation);
+                SyntaxNode oldDeclaration = FindMethodDeclarationViaLocation(oldTree, oldMethod);
+                SyntaxNode newDeclaration = FindMethodDeclarationViaLocation(newTree, newMethod);
 
                 //traverses through the methods children and compares them
-                //if a change is found, the current astNode is returned
-                AstNode changeNode = TraverseAstNodes
-                    (oldDeclaration.Children, newDeclaration.Children, ignoreComments);
+                //if a change is found, the current SyntaxNode or Token is returned
+                SyntaxNodeOrToken changeNodeOrToken = TraverseChildNodesAndTokens
+                    (oldDeclaration.ChildNodesAndTokens(), newDeclaration.ChildNodesAndTokens());
 
-                if (changeNode != null)
+                if (changeNodeOrToken != null)
                 {
-                    newMethod.SetChangeEntryLocation(changeNode);
+                    newMethod.SetChangeEntryLocation(changeNodeOrToken);
                     result.AddChangedMethod(newMethod);
                 }
                 else
@@ -398,76 +474,46 @@ namespace MethodComparison
         }
 
         /// <summary>
-        /// retrieves several attributes from a parameter
+        /// Compares all oldChildNodes(and tokens) with all newChildNodes(and tokens). 
+        /// If a child has children then this method will be called again for the 
+        /// childs.Children (recursion). All comments and whitespaces are ignored.
         /// </summary>
-        /// <param name="parameter">the parameter from which the attributes 
-        /// should be returned</param>
-        /// <param name="parameterName">contains the name of the parameter</param>
-        /// <param name="parameterType">contains the type of the parameter as a string</param>
-        /// <param name="parameterModifier">contains the name of the parameter</param>
-        private static void GetParameterAttributes(
-            ParameterDeclaration parameter,
-            out string parameterName,
-            out string parameterType,
-            out ParameterModifier parameterModifier)
-        {
-            parameterName = parameter.Name;
-            parameterModifier = parameter.ParameterModifier;
-            parameterType = parameter.Type.ToString();
-        }
-
-        /// <summary>
-        /// Compares all oldChildNodes with all newChildNodes.
-        /// if a child has also any children then this method will again 
-        /// be called with the childs.Children (recursion). All comments 
-        /// are ignored.
-        /// </summary>
-        /// <param name="oldChildren">contains the old childNodes</param>
-        /// <param name="newChildren">contains the new childNodes</param>
-        /// <param name="ignoreComments">indicates if comments should be taken into
-        /// account while calculating the methodcomparison result</param>
-        /// <returns>if a changes was found: the AstNode where the first 
+        /// <param name="oldChildren">contains the old childNodes and tokens</param>
+        /// <param name="newChildren">contains the new childNodes and tokens</param>
+        /// <returns>if a changes was found: the SyntaxNode or token where the first 
         /// change is detected, null otherwise</returns>
-        private static AstNode TraverseAstNodes(
-            IEnumerable<AstNode> oldChildren,
-            IEnumerable<AstNode> newChildren,
-            bool ignoreComments)
+        private static SyntaxNodeOrToken TraverseChildNodesAndTokens(
+            ChildSyntaxList oldChildren,
+            ChildSyntaxList newChildren)
         {
             int counter = 0;
-            AstNode change = null;
-            AstNode newChild = null;
-            foreach (AstNode oldChild in oldChildren)
+            SyntaxNodeOrToken change = null;
+            SyntaxNodeOrToken newChild = null;
+
+            foreach (SyntaxNodeOrToken oldChild in oldChildren)
             {
-                if (counter >= newChildren.Count())
+                if (counter >= newChildren.Count)
                 {
                     return newChild;
                 }
 
-                if (SkipNode(oldChild, ignoreComments))
-                {
-                    continue;
-                }
-
                 newChild = newChildren.ElementAt(counter);
 
-                while (SkipNode(newChild, ignoreComments))
-                {
-                    counter ++;
-                    newChild = newChildren.ElementAt(counter);
-                }
+                ChildSyntaxList oldChildChildren = oldChild.ChildNodesAndTokens();
+                ChildSyntaxList newChildChildren = newChild.ChildNodesAndTokens();
 
                 //if the children also has children then the same method 
                 //is called for the child.children
                 //otherwise the text of the current old and new node is compared
-                if (oldChild.HasChildren)
+                if (oldChildChildren.Any())
                 {
-                    if (!newChild.HasChildren)
+                    if (!newChildChildren.Any())
                     {
                         change = newChild;
                         return change;
                     }
 
-                    change = TraverseAstNodes(oldChild.Children, newChild.Children, ignoreComments);
+                    change = TraverseChildNodesAndTokens(oldChildChildren, newChildChildren);
                     if (change != null)
                     {
                         return change;
@@ -475,8 +521,9 @@ namespace MethodComparison
                 }
                 else
                 {
-                    string old = oldChild.ToString();
-                    string newText = newChild.ToString();
+                    string old = GetFilteredSyntaxNodeText(oldChild);
+                    string newText = GetFilteredSyntaxNodeText(newChild);
+
                     if (!old.Equals(newText))
                     {
                         change = newChild;
@@ -490,38 +537,93 @@ namespace MethodComparison
             return change;
         }
 
+        private static string GetFilteredSyntaxNodeText(
+            SyntaxNodeOrToken node)
+        {
+            string filteredText = String.Empty;
+
+            SyntaxNode syntaxNode = node.AsNode();
+
+            if (syntaxNode != null)
+            {
+                //removes whitespaces
+                filteredText = syntaxNode.NormalizeWhitespace().ToString();
+            }
+            else
+            {
+                filteredText = node.AsToken().ValueText;
+            }
+
+            return filteredText;
+        }
+
         /// <summary>
-        /// creates a method signature string including all parameters.
-        /// e.g. public static void Main
+        /// Creates a method signature string including all parameters.
+        /// e.g. public static void Main(param1,param2)
+        /// e.g. public Name, for a property
         /// </summary>
         /// <param name="method">the method for which the signature should be created</param>
         /// <returns>a string of the method signature(modifers, returnValue, name, (parameters))</returns>
-        private static string GetMethodSignatureWithParameters(EntityDeclaration method)
+        private static string GetMethodSignatureWithParameters(
+            MemberDeclarationSyntax method)
         {
             string signature = String.Empty;
+            string modifierString = String.Empty;
+            string returnType = String.Empty;
+            string name = GetMethodName(method);
 
-            string modifiers = GetModifiersAsString(method.Modifiers);
-            AddSpaceIfNotEmpty(ref modifiers);
-            
-            string returnType = method.ReturnType.ToString();
-            AddSpaceIfNotEmpty(ref returnType);
+            //either a method or a constructor
+            BaseMethodDeclarationSyntax m = method as BaseMethodDeclarationSyntax;
 
-            signature += modifiers + returnType +
-                         method.Name + "(" + GetParametersAsStrings(method) + ")";
+            if (m != null)
+            {
+                modifierString = GetModifierString(m.Modifiers);
+                returnType = GetReturnTypeString(m);
+                string parameters = GetParametersAsStrings(m);
+
+                signature = modifierString + returnType + name + "(" + parameters + ")";
+            }
+            else
+            {
+                //check for property 
+                PropertyDeclarationSyntax property = method as PropertyDeclarationSyntax;
+
+                if (property != null)
+                {
+                    modifierString = GetModifierString(property.Modifiers);
+                    signature = modifierString + name;
+                }
+            }
 
             return signature;
         }
 
-        /// <summary>
-        /// adds a space to the string if it is not empty
-        /// </summary>
-        /// <param name="value">contains the string which should be checked and concatenated</param>
-        private static void AddSpaceIfNotEmpty(ref string value)
+        private static string GetModifierString(
+            SyntaxTokenList modifiers)
         {
-            if (!value.Equals(String.Empty))
+            string modifierString = String.Empty;
+
+            foreach (var modifier in modifiers)
             {
-                value += " ";
+                modifierString += modifier.Text + " ";
             }
+
+            return modifierString;
+        }
+
+        private static string GetReturnTypeString(
+            BaseMethodDeclarationSyntax bmd)
+        {
+            string returnType = String.Empty;
+
+            MethodDeclarationSyntax md = bmd as MethodDeclarationSyntax;
+            if (md != null)
+            {
+                //is an ordinary method: has a return type
+                returnType = md.ReturnType + " ";
+            }
+
+            return returnType;
         }
 
         /// <summary>
@@ -532,17 +634,16 @@ namespace MethodComparison
         /// be created</param>
         /// <returns>a string containing all parameters, an empty string
         /// if the method does not contain any parameters</returns>
-        private static string GetParametersAsStrings(EntityDeclaration method)
+        private static string GetParametersAsStrings(
+            BaseMethodDeclarationSyntax method)
         {
-            IEnumerable<ParameterDeclaration> parameters =
-                GetAllDescendantsByType<ParameterDeclaration>(method);
-
             string parameterString = String.Empty;
 
-            foreach (ParameterDeclaration parameter in parameters)
+            IEnumerable<ParameterSyntax> parameters = method.ParameterList.Parameters;
+
+            foreach (ParameterSyntax param in parameters)
             {
-                //add all parameters to the result string
-                parameterString = parameterString + parameter.ToString() + ",";
+                parameterString += param + ",";
             }
 
             if (!parameterString.Equals(String.Empty))
@@ -552,26 +653,6 @@ namespace MethodComparison
             }
 
             return parameterString;
-        }
-
-        /// <summary>
-        /// creates a string containing the modifiers of a method.
-        /// e.g. "public static"
-        /// </summary>
-        /// <param name="methodModifiers">the modifiers for which the string should be created</param>
-        /// <returns>a string containing</returns>
-        private static string GetModifiersAsString(Modifiers methodModifiers)
-        {
-            //if the method contains more than one modifier, they are seperated by ", "
-            string result = methodModifiers.ToString();
-            if (result.Contains(Modifiers.None.ToString()))
-            {
-                return String.Empty;
-            }
-
-            result = result.Replace(", ", " ");
-
-            return result.ToLower();
         }
 
         /// <summary>
@@ -586,8 +667,8 @@ namespace MethodComparison
             SyntaxTree newTree,
             StreamWriter errorLogWriter)
         {
-            bool result = (CheckSyntaxTreeErrors(oldTree, errorLogWriter) &&
-                           CheckSyntaxTreeErrors(newTree, errorLogWriter));
+            bool result = CheckSyntaxTreeErrors(oldTree, errorLogWriter) &&
+                          CheckSyntaxTreeErrors(newTree, errorLogWriter);
 
             return result;
         }
@@ -604,208 +685,17 @@ namespace MethodComparison
             StreamWriter errorLogWriter)
         {
             //ignore warnings
-            IEnumerable<Error> errors = tree.Errors.Where(s => s.ErrorType != ErrorType.Warning);
+            IEnumerable<Diagnostic> errors = tree.GetDiagnostics()
+                .Where(d => d.Severity == DiagnosticSeverity.Error);
 
-            if (!errors.Any())
+            if (errors.Any())
             {
-                return true;
-            }
-            else
-            {
-                foreach (Error error in errors)
+                foreach (Diagnostic error in errors)
                 {
-                    errorLogWriter.WriteLine
-                        ("Error in Line {0} : {1}.", error.Region.BeginLine, error.Message);
+                    errorLogWriter.WriteLine("Error : " + error);
                 }
-                errorLogWriter.Flush();
+
                 return false;
-            }
-        }
-
-        /// <summary>
-        /// checks if the given astNode should be skipped or not. 
-        /// </summary>
-        /// <param name="node">the node which should be checked</param>
-        /// <param name="filterComments">indicates if comments should be skipped</param>
-        /// <returns>true if the node should be skipped, false otherwise</returns>
-        private static bool SkipNode(
-            AstNode node,
-            bool filterComments)
-        {
-            Role role = node.Role;
-
-            bool result = (role.Equals(Roles.Comment) && filterComments) ||
-                          role.Equals(Roles.NewLine);
-
-            return result;
-        }
-
-        /// <summary>
-        /// Finds the StartLocation of the signature of a method.
-        /// This method is usually only used for the GuiDemo.
-        /// </summary>
-        /// <param name="method">refers to a method/constructor/destructor</param>
-        /// <returns>the StartLocation of the method</returns>
-        private static TextLocation FindSignatureLocation(EntityDeclaration method)
-        {
-            //need to convert it to a string, because otherwise it won't be filtered
-            string attributeRole = Roles.Attribute.ToString();
-
-            IEnumerable<AstNode> nodes = method.Children.Where
-                (s =>
-                    !s.Role.Equals(Roles.Comment) && !s.Role.Equals(Roles.NewLine) &&
-                    !s.Role.ToString().Equals(attributeRole));
-
-            if (!nodes.Any())
-            {
-                return new TextLocation(0,0);
-            }
-
-            return nodes.First().StartLocation;
-        }
-
-        /// <summary>
-        /// creates the fully classified methodName of a method.
-        /// (namespace.type1.type2.methodName)
-        /// </summary>
-        /// <param name="method">the method for which the name should be returned</param>
-        /// <returns>the fully classified methodName</returns>
-        private static string GetFullyQualifiedMethodName(EntityDeclaration method)
-        {
-            TypeDeclaration classType = method.GetParent<TypeDeclaration>();
-            AstNode nextParent = classType.Parent;
-
-            string fullClassName = classType.Name + "." + method.Name;
-
-            Type namespaceDeclaration = typeof(NamespaceDeclaration);
-            Type typeDeclaration = typeof(TypeDeclaration);
-
-            //a class could be defined within a class
-            //therefore, each class name is added to the fully qualified name
-            //finally the namespace is added
-            while (nextParent != null)
-            {
-                if (nextParent.GetType() == typeDeclaration)
-                {
-                    fullClassName = ((TypeDeclaration)nextParent).Name + "." + fullClassName;
-                }
-                else if (nextParent.GetType() == namespaceDeclaration)
-                {
-                    //reached the namespace declaration
-                    fullClassName = ((NamespaceDeclaration)nextParent).Name + "." + fullClassName;
-                    return fullClassName;
-                }
-
-                nextParent = nextParent.Parent;
-            }
-
-            return fullClassName;
-        }
-
-        /// <summary>
-        /// creates a method signature string without the parameters.
-        /// e.g. public static void Main
-        /// </summary>
-        /// <param name="method">the method for which the signature should be created</param>
-        /// <returns>a string of the method signature(modifers, returnValue, name)</returns>
-        private static string GetMethodSignatureString(EntityDeclaration method)
-        {
-            string signature = GetModifiersAsString(method.Modifiers) + " " + method.ReturnType +
-                               " " + method.Name;
-
-            return signature;
-        }
-
-        /// <summary>
-        /// compares the modifiers of two methods. As the Modifier Type is
-        /// an enum they could be compared directly.
-        /// </summary>
-        /// <param name="oldMethod">contains the old MethodDeclaration</param>
-        /// <param name="newMethod">contains the new MethodDeclaration</param>
-        /// <returns>true if the methods have the same modifiers, false otherwise</returns>
-        private static bool CompareMethodModifiers(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
-        {
-            Modifiers oldModifiers = oldMethod.Modifiers;
-            Modifiers newModifiers = newMethod.Modifiers;
-
-            return (oldModifiers == newModifiers);
-        }
-
-        /// <summary>
-        /// compares the returnValueType of two methods. As the ReturnValueType is
-        /// an AstType it does not contain any method for comparison. Hence, only
-        /// the text contents are compared.
-        /// </summary>
-        /// <param name="oldMethod">contains the old MethodDeclaration</param>
-        /// <param name="newMethod">contains the new MethodDeclaration</param>
-        /// <returns>true if the methods have the same returnValueType, false otherwise</returns>
-        private static bool CompareReturnValueType(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
-        {
-            AstType oldReturnType = oldMethod.ReturnType;
-            AstType newReturnType = newMethod.ReturnType;
-
-            string oldType = oldReturnType.ToString();
-            string newType = newReturnType.ToString();
-
-            return (oldType.Equals(newType));
-        }
-
-        /// <summary>
-        /// compares the parameters of two methods
-        /// </summary>
-        /// <param name="oldMethod">contains the old MethodDeclaration</param>
-        /// <param name="newMethod">contains the new MethodDeclaration</param>
-        /// <returns>true if the methods have the same parameters, false otherwise</returns>
-        private static bool CompareParameters(
-            MethodDeclaration oldMethod,
-            MethodDeclaration newMethod)
-        {
-            AstNodeCollection<ParameterDeclaration> oldParameters = oldMethod.Parameters;
-            AstNodeCollection<ParameterDeclaration> newParameters = newMethod.Parameters;
-
-            if (oldParameters.Count != newParameters.Count)
-            {
-                return false;
-            }
-
-            int counter = 0;
-            foreach (ParameterDeclaration parameter in oldParameters)
-            {
-                //A Parameter consists of a name, type and a modifier
-
-                //retrieve the corresponding attributes from the oldParameter
-                string oldParameterName;
-                ParameterModifier oldParameterModifier;
-                string oldParameterType;
-
-                GetParameterAttributes
-                    (parameter, out oldParameterName, out oldParameterType, out oldParameterModifier);
-
-                //retrieve the corresponding attributes from the newParameter
-                ParameterDeclaration newParameter = newParameters.ElementAt(counter);
-                string newParameterName;
-                ParameterModifier newParameterModifier;
-                string newParameterType;
-
-                GetParameterAttributes
-                    (newParameter, out newParameterName, out newParameterType,
-                        out newParameterModifier);
-
-                //compare their attributes
-                bool result = (oldParameterName.Equals(newParameterName)) &&
-                              (oldParameterModifier == newParameterModifier) &&
-                              (oldParameterType.Equals(newParameterType));
-
-                if (!result)
-                {
-                    return false;
-                }
-
-                counter++;
             }
 
             return true;
